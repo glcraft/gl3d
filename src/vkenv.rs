@@ -17,6 +17,7 @@ pub struct VulkanEnvironment {
     pub swapchain: Arc<vk::swapchain::Swapchain>,
     pub images: Vec<Arc<vk::image::swapchain::SwapchainImage>>,
     pub memory_allocator: vk::memory::allocator::GenericMemoryAllocator<Arc<vk::memory::allocator::FreeListAllocator>>,
+    pub command_buffer_allocator: vk::command_buffer::allocator::StandardCommandBufferAllocator,
     pub window: Arc<winit::window::Window>,
 }
 
@@ -53,6 +54,7 @@ impl VulkanEnvironment {
             compute: None
         };
         let memory_allocator = vk::memory::allocator::StandardMemoryAllocator::new_default(logical_device.clone());
+        let command_memory_allocator = vk::command_buffer::allocator::StandardCommandBufferAllocator::new(logical_device.clone(), Default::default());
         let (swapchain, images) = Self::new_swapchain(
             &window,
             &physical_device,
@@ -65,6 +67,7 @@ impl VulkanEnvironment {
             device: logical_device,
             queues,
             memory_allocator,
+            command_buffer_allocator: command_memory_allocator,
             swapchain,
             images,
             window,
@@ -73,8 +76,9 @@ impl VulkanEnvironment {
     fn new_window(event_loop: &winit::event_loop::EventLoop<()>, instance: &Arc<vk::instance::Instance>) -> Result<(Arc<winit::window::Window>, Arc<vk::swapchain::Surface>)> {
         use vulkano_win::VkSurfaceBuild;
         let surface = winit::window::WindowBuilder::new()
+            .with_resizable(false)
             .build_vk_surface(event_loop, instance.clone())
-            .unwrap();
+            .map_err(|_| anyhow::anyhow!("failed to create window"))?;
         let window = surface
             .object()
             .ok_or_else(|| anyhow::anyhow!("failed to get window"))?
