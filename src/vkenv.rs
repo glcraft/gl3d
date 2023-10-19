@@ -4,9 +4,16 @@ use vulkano as vk;
 type Result<T> = std::result::Result<T, anyhow::Error>;
 
 #[derive(Debug)]
+pub struct Queues {
+    pub graphics: Arc<vk::device::Queue>,
+    pub compute: Option<Arc<vk::device::Queue>>,
+}
+
+#[derive(Debug)]
 pub struct VulkanEnvironment {
     pub instance: Arc<vk::instance::Instance>,
-    pub queues: Vec<Arc<vk::device::Queue>>,
+    pub device: Arc<vk::device::Device>,
+    pub queues: Queues,
     pub swapchain: Arc<vk::swapchain::Swapchain>,
     pub images: Vec<Arc<vk::image::swapchain::SwapchainImage>>,
     pub memory_allocator: vk::memory::allocator::GenericMemoryAllocator<Arc<vk::memory::allocator::FreeListAllocator>>,
@@ -41,6 +48,10 @@ impl VulkanEnvironment {
             queue_family_index,
             device_extensions,
         )?;
+        let queues = Queues { 
+            graphics: queues.first().cloned().ok_or_else(|| anyhow::anyhow!("failed to find graphics queue"))?, 
+            compute: None
+        };
         let memory_allocator = vk::memory::allocator::StandardMemoryAllocator::new_default(logical_device.clone());
         let (swapchain, images) = Self::new_swapchain(
             &window,
@@ -51,6 +62,7 @@ impl VulkanEnvironment {
 
         Ok(VulkanEnvironment {
             instance,
+            device: logical_device,
             queues,
             memory_allocator,
             swapchain,
