@@ -11,6 +11,8 @@ fn main() {
                                        //
     let vkenv = vkenv::VulkanEnvironment::new(&event_loop).expect("failed to create environment");
 
+    let renderer = render::Renderer::new(&vkenv).expect("failed to create renderer");
+
     event_loop.run(|event, _, control_flow| match event {
         Event::WindowEvent {
             event: WindowEvent::CloseRequested,
