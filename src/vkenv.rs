@@ -12,6 +12,7 @@ pub struct Queues {
 #[derive(Debug)]
 pub struct VulkanEnvironment {
     pub instance: Arc<vk::instance::Instance>,
+    pub physical_device: Arc<vk::device::physical::PhysicalDevice>,
     pub device: Arc<vk::device::Device>,
     pub queues: Queues,
     pub swapchain: Arc<vk::swapchain::Swapchain>,
@@ -64,6 +65,7 @@ impl VulkanEnvironment {
 
         Ok(VulkanEnvironment {
             instance,
+            physical_device,
             device: logical_device,
             queues,
             memory_allocator,
