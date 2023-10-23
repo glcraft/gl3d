@@ -15,11 +15,10 @@ pub struct VulkanEnvironment {
     pub physical_device: Arc<vk::device::physical::PhysicalDevice>,
     pub device: Arc<vk::device::Device>,
     pub queues: Queues,
-    pub swapchain: Arc<vk::swapchain::Swapchain>,
-    pub images: Vec<Arc<vk::image::swapchain::SwapchainImage>>,
     pub memory_allocator: vk::memory::allocator::GenericMemoryAllocator<Arc<vk::memory::allocator::FreeListAllocator>>,
     pub command_buffer_allocator: vk::command_buffer::allocator::StandardCommandBufferAllocator,
     pub window: Arc<winit::window::Window>,
+    pub surface: Arc<vk::swapchain::Surface>,
 }
 
 impl VulkanEnvironment {
@@ -56,12 +55,6 @@ impl VulkanEnvironment {
         };
         let memory_allocator = vk::memory::allocator::StandardMemoryAllocator::new_default(logical_device.clone());
         let command_memory_allocator = vk::command_buffer::allocator::StandardCommandBufferAllocator::new(logical_device.clone(), Default::default());
-        let (swapchain, images) = Self::new_swapchain(
-            &window,
-            &physical_device,
-            &logical_device,
-            &surface,
-        )?;
 
         Ok(VulkanEnvironment {
             instance,
@@ -70,9 +63,8 @@ impl VulkanEnvironment {
             queues,
             memory_allocator,
             command_buffer_allocator: command_memory_allocator,
-            swapchain,
-            images,
             window,
+            surface,
         })
     }
     fn new_window(event_loop: &winit::event_loop::EventLoop<()>, instance: &Arc<vk::instance::Instance>) -> Result<(Arc<winit::window::Window>, Arc<vk::swapchain::Surface>)> {
@@ -171,57 +163,3 @@ impl VulkanEnvironment {
     }
 }
 
-struct Framebuffer {
-    pub image: Arc<vk::image::swapchain::SwapchainImage>,
-    pub framebuffer: Arc<vk::render_pass::Framebuffer>,
-    pub command_buffer: Arc<vk::command_buffer::PrimaryAutoCommandBuffer>,
-}
-
-struct Framebuffers(pub Vec<Arc<vk::render_pass::Framebuffer>>);
-
-struct Swapchain {
-    pub swapchain: Arc<vk::swapchain::Swapchain>,
-    pub framebuffers: Framebuffers,
-}
-
-impl Swapchain {
-    pub fn new(vkenv: &VulkanEnvironment, surface: &Arc<vk::swapchain::Surface>) -> Result<Self> {
-        let caps = vkenv.physical_device
-            .surface_capabilities(surface, Default::default())
-            .map_err(|e| anyhow::anyhow!("failed to get surface capabilities: {}", e))?;
-        let dimensions = vkenv.window.inner_size();
-        let composite_alpha = caps.supported_composite_alpha.into_iter().next().unwrap();
-        let image_format = Some(
-                vkenv.physical_device
-                    .surface_formats(surface, Default::default())
-                    .map_err(|e| anyhow::anyhow!("failed to get surface formats: {}", e))?[0]
-                    .0,
-            );
-        let swapchain = vk::swapchain::Swapchain::new(
-                vkenv.device.clone(),
-                surface.clone(),
-                vk::swapchain::SwapchainCreateInfo {
-                    min_image_count: caps.min_image_count + 1, // How many buffers to use in the swapchain
-                    image_format,
-                    image_extent: dimensions.into(),
-                    image_usage: vk::image::ImageUsage::COLOR_ATTACHMENT, // What the images are going to be used for
-                    composite_alpha,
-                    ..Default::default()
-                },
-            )
-            .map_err(|e| anyhow::anyhow!("failed to create swapchain: {}", e))?;
-        Ok(Self {
-            swapchain: swapchain.0,
-            framebuffers: todo!(),
-        })
-    }
-    pub fn recreate(&mut self, vkenv: &VulkanEnvironment, surface: &Arc<vk::swapchain::Surface>) -> Result<()> {
-        self.swapchain.recreate(vk::swapchain::SwapchainCreateInfo {
-                image_extent: vkenv.window.inner_size().into(),
-                ..self.swapchain.create_info()
-            })
-            .map_err(|e| anyhow::anyhow!("failed to recreate swapchain: {}", e));
-        self.framebuffers = todo!();
-        Ok(())
-    }
-}

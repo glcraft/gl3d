@@ -4,40 +4,102 @@ use crate::vkenv::VulkanEnvironment;
 
 type Result<T> = std::result::Result<T, anyhow::Error>;
 
-pub struct Renderer {
-    render_pass: Arc<vk::render_pass::RenderPass>,
-    framebuffers: Vec<Arc<vk::render_pass::Framebuffer>>,
-    pipeline: Arc<vk::pipeline::GraphicsPipeline>,
-    command_buffers: Vec<Arc<vk::command_buffer::PrimaryAutoCommandBuffer>>,
+pub struct Framebuffer {
+    pub image: Arc<vk::image::swapchain::SwapchainImage>,
+    pub framebuffer: Arc<vk::render_pass::Framebuffer>,
+    pub command_buffer: Arc<vk::command_buffer::PrimaryAutoCommandBuffer>,
 }
 
-impl Renderer {
-    pub fn new(vkenv: &VulkanEnvironment) -> Result<Self> {
-        let render_pass = Self::get_render_pass(vkenv)?;
-        let framebuffers = Self::get_framebuffers(vkenv, &render_pass)?;
-        let mut viewport = vk::pipeline::graphics::viewport::Viewport {
-            origin: [0.0, 0.0],
-            dimensions: vkenv.window.inner_size().into(),
-            depth_range: 0.0..1.0,
-        };
-    
-        let pipeline = Self::get_pipeline(vkenv, &render_pass, viewport)?;
-        let command_buffers = Self::get_command_buffers(vkenv, &pipeline, &framebuffers)?;
-        Ok(Self {
+impl Framebuffer {
+    pub fn new(render_pass: Arc<vk::render_pass::RenderPass>, image: Arc<vk::image::swapchain::SwapchainImage>) -> Result<Self> {
+        let image_view = vk::image::view::ImageView::new_default(image.clone())?;
+        let fb = vk::render_pass::Framebuffer::new(
             render_pass,
-            framebuffers,
-            pipeline,
-            command_buffers,
+            vk::render_pass::FramebufferCreateInfo {
+                attachments: vec![image_view],
+                ..Default::default()
+            },
+        )?;
+        Ok(Self {
+            image,
+            framebuffer: fb,
+            command_buffer: todo!(),
         })
     }
-    fn get_render_pass(vkenv: &VulkanEnvironment) -> Result<Arc<vk::render_pass::RenderPass>> {
+}
+
+pub struct Framebuffers(pub Vec<Framebuffer>);
+
+impl Framebuffers {
+    pub fn new(vkenv: &VulkanEnvironment, images: Vec<Arc<vk::image::swapchain::SwapchainImage>>, render_pass: &Arc<vk::render_pass::RenderPass>) -> Result<Self> {
+        let framebuffers = images
+            .into_iter()
+            .map(|image| Framebuffer::new(render_pass.clone(), image))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(Self(framebuffers))
+    }
+}
+
+pub struct Swapchain {
+    vkenv: Arc<VulkanEnvironment>,
+    pub swapchain: Arc<vk::swapchain::Swapchain>,
+    pub render_pass: Arc<vk::render_pass::RenderPass>,
+    pub framebuffers: Framebuffers,
+}
+
+impl Swapchain {
+    pub fn new(vkenv: &Arc<VulkanEnvironment>) -> Result<Self> {
+        let caps = vkenv.physical_device
+            .surface_capabilities(&vkenv.surface, Default::default())
+            .map_err(|e| anyhow::anyhow!("failed to get surface capabilities from physical device: {}", e))?;
+        let dimensions = vkenv.window.inner_size();
+        let composite_alpha = caps.supported_composite_alpha.into_iter().next().unwrap();
+        let image_format = Some(
+                vkenv.physical_device
+                    .surface_formats(&vkenv.surface, Default::default())
+                    .map_err(|e| anyhow::anyhow!("failed to get surface formats from physical device: {}", e))?[0]
+                    .0,
+            );
+        let (swapchain, images) = vk::swapchain::Swapchain::new(
+                vkenv.device.clone(),
+                vkenv.surface.clone(),
+                vk::swapchain::SwapchainCreateInfo {
+                    min_image_count: caps.min_image_count + 1, // How many buffers to use in the swapchain
+                    image_format,
+                    image_extent: dimensions.into(),
+                    image_usage: vk::image::ImageUsage::COLOR_ATTACHMENT, // What the images are going to be used for
+                    composite_alpha,
+                    ..Default::default()
+                },
+            )
+            .map_err(|e| anyhow::anyhow!("failed to create swapchain: {}", e))?;
+        let render_pass = Self::new_render_pass(vkenv, &swapchain)?;
+        let fbs = Framebuffers::new(vkenv, images, &render_pass)?;
+        Ok(Self {
+            vkenv: vkenv.clone(),
+            swapchain,
+            render_pass,
+            framebuffers: fbs,
+        })
+    }
+    pub fn recreate(&mut self, vkenv: &VulkanEnvironment, surface: &Arc<vk::swapchain::Surface>) -> Result<()> {
+        let (swapchain, images) = self.swapchain.recreate(vk::swapchain::SwapchainCreateInfo {
+                image_extent: vkenv.window.inner_size().into(),
+                ..self.swapchain.create_info()
+            })
+            .map_err(|e| anyhow::anyhow!("failed to recreate swapchain: {}", e))?;
+        self.swapchain = swapchain;
+        self.framebuffers = Framebuffers::new(vkenv, images, &self.render_pass)?;
+        Ok(())
+    }
+    fn new_render_pass(vkenv: &Arc<VulkanEnvironment>, swapchain: &Arc<vk::swapchain::Swapchain>) -> Result<Arc<vk::render_pass::RenderPass>> {
         vk::single_pass_renderpass!(
             vkenv.device.clone(),
             attachments: {
                 color: {
                     load: Clear,
                     store: Store,
-                    format: vkenv.swapchain.image_format(), // set the format the same as the swapchain
+                    format: swapchain.image_format(), // set the format the same as the swapchain
                     samples: 1,
                 },
             },
@@ -48,78 +110,4 @@ impl Renderer {
         )
         .map_err(Into::into)
     }
-    fn get_framebuffers(
-        vkenv: &VulkanEnvironment,
-        render_pass: &Arc<vk::render_pass::RenderPass>,
-    ) -> Result<Vec<Arc<vk::render_pass::Framebuffer>>> {
-        vkenv.images
-            .iter()
-            .map(|image| {
-                let view = vk::image::view::ImageView::new_default(image.clone())
-                    .map_err(Into::<anyhow::Error>::into)?;
-                vk::render_pass::Framebuffer::new(
-                    render_pass.clone(),
-                    vk::render_pass::FramebufferCreateInfo {
-                        attachments: vec![view],
-                        ..Default::default()
-                    },
-                )
-                .map_err(Into::into)
-            })
-            .collect::<Result<Vec<_>>>()
-    }
-    fn get_pipeline(
-        vkenv: &VulkanEnvironment,
-        render_pass: &Arc<vk::render_pass::RenderPass>,
-        viewport: vk::pipeline::graphics::viewport::Viewport,
-    ) -> Result<Arc<vk::pipeline::graphics::GraphicsPipeline>> {
-        use vk::pipeline::graphics::input_assembly::InputAssemblyState;
-        use vk::pipeline::graphics::viewport::{Viewport, ViewportState};
-        use vk::pipeline::GraphicsPipeline;
-        use vk::render_pass::Subpass;
-        use vk::shader::ShaderModule;
-
-        vk::pipeline::graphics::GraphicsPipeline::start()
-            .input_assembly_state(InputAssemblyState::new())
-            .viewport_state(ViewportState::viewport_fixed_scissor_irrelevant([viewport]))
-            .render_pass(Subpass::from(render_pass.clone(), 0).unwrap())
-            .build(vkenv.device.clone())
-            .map_err(Into::into)
-    }
-    fn get_command_buffers(
-        vkenv: &VulkanEnvironment,
-        pipeline: &Arc<vk::pipeline::GraphicsPipeline>,
-        framebuffers: &[Arc<vk::render_pass::Framebuffer>],
-    ) -> Result<Vec<Arc<vk::command_buffer::PrimaryAutoCommandBuffer>>> {
-        framebuffers
-            .iter()
-            .map(|framebuffer| {
-                let mut builder = vk::command_buffer::AutoCommandBufferBuilder::primary(
-                    &vkenv.command_buffer_allocator,
-                    vkenv.queues.graphics.queue_family_index(),
-                    vk::command_buffer::CommandBufferUsage::MultipleSubmit, // don't forget to write the correct buffer usage
-                )
-                .map_err(Into::<anyhow::Error>::into)?;
-    
-                builder
-                    .begin_render_pass(
-                        vk::command_buffer::RenderPassBeginInfo {
-                            clear_values: vec![Some([0.1, 0.1, 0.1, 1.0].into())],
-                            ..vk::command_buffer::RenderPassBeginInfo::framebuffer(framebuffer.clone())
-                        },
-                        vk::command_buffer::SubpassContents::Inline,
-                    )
-                    .map_err(Into::<anyhow::Error>::into)?
-                    .bind_pipeline_graphics(pipeline.clone())
-                    // .bind_vertex_buffers(0, vertex_buffer.clone())
-                    // .draw(vertex_buffer.len() as u32, 1, 0, 0)
-                    // .unwrap()
-                    .end_render_pass()
-                    .map_err(Into::<anyhow::Error>::into)?;
-    
-                Ok(Arc::new(builder.build().map_err(Into::<anyhow::Error>::into)?))
-            })
-            .collect::<Result<Vec<_>>>()
-    }
-    
 }
