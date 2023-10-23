@@ -48,66 +48,43 @@ pub struct Swapchain {
 }
 
 impl Swapchain {
-    pub fn new(vkenv: &Arc<VulkanEnvironment>) -> Result<Self> {
-        let caps = vkenv.physical_device
-            .surface_capabilities(&vkenv.surface, Default::default())
-            .map_err(|e| anyhow::anyhow!("failed to get surface capabilities from physical device: {}", e))?;
-        let dimensions = vkenv.window.inner_size();
-        let composite_alpha = caps.supported_composite_alpha.into_iter().next().unwrap();
-        let image_format = Some(
-                vkenv.physical_device
-                    .surface_formats(&vkenv.surface, Default::default())
-                    .map_err(|e| anyhow::anyhow!("failed to get surface formats from physical device: {}", e))?[0]
-                    .0,
-            );
+    pub fn new(vkenv: Arc<VulkanEnvironment>) -> Result<Self> {
+        let caps = vkenv.surface_capabilities()?;
+        let composite_alpha = caps.supported_composite_alpha
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("no supported composite alpha"))?;
         let (swapchain, images) = vk::swapchain::Swapchain::new(
                 vkenv.device.clone(),
                 vkenv.surface.clone(),
                 vk::swapchain::SwapchainCreateInfo {
                     min_image_count: caps.min_image_count + 1, // How many buffers to use in the swapchain
-                    image_format,
-                    image_extent: dimensions.into(),
+                    image_format: vkenv.first_surface_format()?.map(|(f, _)| f),
+                    image_extent: vkenv.dimension(),
                     image_usage: vk::image::ImageUsage::COLOR_ATTACHMENT, // What the images are going to be used for
                     composite_alpha,
                     ..Default::default()
                 },
             )
             .map_err(|e| anyhow::anyhow!("failed to create swapchain: {}", e))?;
-        let render_pass = Self::new_render_pass(vkenv, &swapchain)?;
-        let fbs = Framebuffers::new(vkenv, images, &render_pass)?;
+        let render_pass = vkenv.new_render_pass(&swapchain)?;
+        let framebuffers = Framebuffers::new(&vkenv, images, &render_pass)?;
         Ok(Self {
-            vkenv: vkenv.clone(),
+            vkenv,
             swapchain,
             render_pass,
-            framebuffers: fbs,
+            framebuffers,
         })
     }
-    pub fn recreate(&mut self, vkenv: &VulkanEnvironment, surface: &Arc<vk::swapchain::Surface>) -> Result<()> {
+    pub fn recreate(&mut self) -> Result<()> {
         let (swapchain, images) = self.swapchain.recreate(vk::swapchain::SwapchainCreateInfo {
-                image_extent: vkenv.window.inner_size().into(),
+                image_extent: self.vkenv.dimension(),
                 ..self.swapchain.create_info()
             })
             .map_err(|e| anyhow::anyhow!("failed to recreate swapchain: {}", e))?;
         self.swapchain = swapchain;
-        self.framebuffers = Framebuffers::new(vkenv, images, &self.render_pass)?;
+        self.framebuffers = Framebuffers::new(&self.vkenv, images, &self.render_pass)?;
         Ok(())
     }
-    fn new_render_pass(vkenv: &Arc<VulkanEnvironment>, swapchain: &Arc<vk::swapchain::Swapchain>) -> Result<Arc<vk::render_pass::RenderPass>> {
-        vk::single_pass_renderpass!(
-            vkenv.device.clone(),
-            attachments: {
-                color: {
-                    load: Clear,
-                    store: Store,
-                    format: swapchain.image_format(), // set the format the same as the swapchain
-                    samples: 1,
-                },
-            },
-            pass: {
-                color: [color],
-                depth_stencil: {},
-            },
-        )
-        .map_err(Into::into)
-    }
+    
 }

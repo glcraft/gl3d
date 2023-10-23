@@ -163,3 +163,44 @@ impl VulkanEnvironment {
     }
 }
 
+impl VulkanEnvironment {
+    pub fn surface_capabilities(&self) -> Result<vk::swapchain::SurfaceCapabilities> {
+        self.physical_device
+            .surface_capabilities(&self.surface, Default::default())
+            .map_err(|e| anyhow::anyhow!("failed to get surface capabilities from physical device: {}", e))
+    }
+    pub fn dimension(&self) -> [u32; 2] {
+        self.window.inner_size().into()
+    }
+    pub fn surface_formats(&self) -> Result<Vec<(vk::format::Format, vk::swapchain::ColorSpace)>> {
+        self.physical_device
+            .surface_formats(&self.surface, Default::default())
+            .map_err(|e| anyhow::anyhow!("failed to get surface formats from physical device: {}", e))
+    }
+    pub fn first_surface_format(&self) -> Result<Option<(vk::format::Format, vk::swapchain::ColorSpace)>> {
+        Ok(self.physical_device
+            .surface_formats(&self.surface, Default::default())
+            .map_err(|e| anyhow::anyhow!("failed to get surface formats from physical device: {}", e))?
+            .into_iter()
+            .next()
+        )
+    }
+    pub fn new_render_pass(&self, swapchain: &Arc<vk::swapchain::Swapchain>) -> Result<Arc<vk::render_pass::RenderPass>> {
+        vk::single_pass_renderpass!(
+            self.device.clone(),
+            attachments: {
+                color: {
+                    load: Clear,
+                    store: Store,
+                    format: swapchain.image_format(), // set the format the same as the swapchain
+                    samples: 1,
+                },
+            },
+            pass: {
+                color: [color],
+                depth_stencil: {},
+            },
+        )
+        .map_err(Into::into)
+    }
+}
