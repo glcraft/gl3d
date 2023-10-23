@@ -5,13 +5,16 @@ use crate::vkenv::VulkanEnvironment;
 type Result<T> = std::result::Result<T, anyhow::Error>;
 
 pub struct Framebuffer {
+    vkenv: Arc<VulkanEnvironment>,
     pub image: Arc<vk::image::swapchain::SwapchainImage>,
     pub framebuffer: Arc<vk::render_pass::Framebuffer>,
-    pub command_buffer: Arc<vk::command_buffer::PrimaryAutoCommandBuffer>,
+    pub command_buffer: Option<Arc<vk::command_buffer::PrimaryAutoCommandBuffer>>,
 }
 
+type AutoCommandBufferBuilder = vk::command_buffer::AutoCommandBufferBuilder<vk::command_buffer::PrimaryAutoCommandBuffer<<vk::command_buffer::allocator::StandardCommandBufferAllocator as vk::command_buffer::allocator::CommandBufferAllocator>::Alloc>, vk::command_buffer::allocator::StandardCommandBufferAllocator>;
+
 impl Framebuffer {
-    pub fn new(render_pass: Arc<vk::render_pass::RenderPass>, image: Arc<vk::image::swapchain::SwapchainImage>) -> Result<Self> {
+    fn new(vkenv: Arc<VulkanEnvironment>, render_pass: Arc<vk::render_pass::RenderPass>, image: Arc<vk::image::swapchain::SwapchainImage>) -> Result<Self> {
         let image_view = vk::image::view::ImageView::new_default(image.clone())?;
         let fb = vk::render_pass::Framebuffer::new(
             render_pass,
@@ -21,22 +24,49 @@ impl Framebuffer {
             },
         )?;
         Ok(Self {
+            vkenv,
             image,
             framebuffer: fb,
-            command_buffer: todo!(),
+            command_buffer: None,
         })
+    }
+    pub fn build_command_buffer<F>(&mut self, build_callback: F) -> Result<()> 
+    where
+        F: Fn(&mut AutoCommandBufferBuilder, vk::command_buffer::RenderPassBeginInfo) -> Result<()>,
+    {
+        let mut builder = vk::command_buffer::AutoCommandBufferBuilder::primary(
+            &self.vkenv.command_buffer_allocator,
+            self.vkenv.queues.graphics.queue_family_index(),
+            vk::command_buffer::CommandBufferUsage::MultipleSubmit, // don't forget to write the correct buffer usage
+        )
+        .map_err(Into::<anyhow::Error>::into)?;
+
+        build_callback(&mut builder, vk::command_buffer::RenderPassBeginInfo::framebuffer(self.framebuffer.clone()))?;
+
+        self.command_buffer = Some(Arc::new(builder.build().map_err(Into::<anyhow::Error>::into)?));
+
+        Ok(())
     }
 }
 
-pub struct Framebuffers(pub Vec<Framebuffer>);
+pub struct Framebuffers(Vec<Framebuffer>);
 
 impl Framebuffers {
-    pub fn new(vkenv: &VulkanEnvironment, images: Vec<Arc<vk::image::swapchain::SwapchainImage>>, render_pass: &Arc<vk::render_pass::RenderPass>) -> Result<Self> {
+    pub fn new(vkenv: &Arc<VulkanEnvironment>, images: Vec<Arc<vk::image::swapchain::SwapchainImage>>, render_pass: &Arc<vk::render_pass::RenderPass>) -> Result<Self> {
         let framebuffers = images
             .into_iter()
-            .map(|image| Framebuffer::new(render_pass.clone(), image))
+            .map(|image| Framebuffer::new(vkenv.clone(), render_pass.clone(), image))
             .collect::<Result<Vec<_>>>()?;
         Ok(Self(framebuffers))
+    }
+    pub fn build_command_buffer<F>(&mut self, build_callback: F) -> Result<()> 
+    where
+        F: Fn(&mut AutoCommandBufferBuilder, vk::command_buffer::RenderPassBeginInfo) -> Result<()> + Clone,
+    {
+        for framebuffer in &mut self.0 {
+            framebuffer.build_command_buffer(build_callback.clone())?;
+        }
+        Ok(())
     }
 }
 
