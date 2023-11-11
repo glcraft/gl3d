@@ -37,12 +37,21 @@ fn main() {
         })
         .expect("failed to build command buffer");
 
-    event_loop.run(|event, _, control_flow| match event {
+    event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent {
             event: WindowEvent::CloseRequested,
             ..
         } => {
             *control_flow = ControlFlow::Exit;
+        }
+        Event::WindowEvent {
+            event: WindowEvent::Resized(_),
+            ..
+        } => {
+            swapchain.recreate();
+        }
+        Event::MainEventsCleared => {
+            swapchain.draw().expect("failed to draw");
         }
         _ => (),
     });
