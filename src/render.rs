@@ -9,6 +9,7 @@ pub struct Framebuffer {
     pub image: Arc<vk::image::swapchain::SwapchainImage>,
     pub framebuffer: Arc<vk::render_pass::Framebuffer>,
     pub command_buffer: Option<Arc<vk::command_buffer::PrimaryAutoCommandBuffer>>,
+    pub fence: Option<Arc<Box<dyn vk::sync::GpuFuture>>>
 }
 
 type AutoCommandBufferBuilder = vk::command_buffer::AutoCommandBufferBuilder<vk::command_buffer::PrimaryAutoCommandBuffer<<vk::command_buffer::allocator::StandardCommandBufferAllocator as vk::command_buffer::allocator::CommandBufferAllocator>::Alloc>, vk::command_buffer::allocator::StandardCommandBufferAllocator>;
@@ -28,11 +29,10 @@ impl Framebuffer {
             image,
             framebuffer: fb,
             command_buffer: None,
+            fence: None
         })
     }
-    pub fn build_command_buffer<F>(&mut self, build_callback: F) -> Result<()> 
-    where
-        F: Fn(&mut AutoCommandBufferBuilder, vk::command_buffer::RenderPassBeginInfo) -> Result<()>,
+    pub fn build_command_buffer(&mut self, build_callback: &dyn Fn(&mut AutoCommandBufferBuilder, vk::command_buffer::RenderPassBeginInfo) -> Result<()>,) -> Result<()> 
     {
         let mut builder = vk::command_buffer::AutoCommandBufferBuilder::primary(
             &self.vkenv.command_buffer_allocator,
@@ -48,8 +48,16 @@ impl Framebuffer {
         Ok(())
     }
 }
+trait CommandBufferBuilder: Fn(&mut AutoCommandBufferBuilder, vk::command_buffer::RenderPassBeginInfo) -> Result<()> + Clone + Sized
+{}
 
-pub struct Framebuffers(Vec<Framebuffer>);
+impl<F> CommandBufferBuilder for F where F: Fn(&mut AutoCommandBufferBuilder, vk::command_buffer::RenderPassBeginInfo) -> Result<()> + Clone 
+{}
+
+pub struct Framebuffers {
+    list: Vec<Framebuffer>,
+    cb_builder: Option<Arc<dyn Fn(&mut AutoCommandBufferBuilder, vk::command_buffer::RenderPassBeginInfo) -> Result<()>>>
+}
 
 impl Framebuffers {
     pub fn new(vkenv: &Arc<VulkanEnvironment>, images: Vec<Arc<vk::image::swapchain::SwapchainImage>>, render_pass: &Arc<vk::render_pass::RenderPass>) -> Result<Self> {
@@ -57,14 +65,26 @@ impl Framebuffers {
             .into_iter()
             .map(|image| Framebuffer::new(vkenv.clone(), render_pass.clone(), image))
             .collect::<Result<Vec<_>>>()?;
-        Ok(Self(framebuffers))
+        Ok(Self {
+            list: framebuffers,
+            cb_builder: None
+        })
     }
     pub fn build_command_buffer<F>(&mut self, build_callback: F) -> Result<()> 
     where
-        F: Fn(&mut AutoCommandBufferBuilder, vk::command_buffer::RenderPassBeginInfo) -> Result<()> + Clone,
+        F: 'static+Fn(&mut AutoCommandBufferBuilder, vk::command_buffer::RenderPassBeginInfo) -> Result<()> + Clone,
     {
-        for framebuffer in &mut self.0 {
-            framebuffer.build_command_buffer(build_callback.clone())?;
+        for framebuffer in &mut self.list {
+            framebuffer.build_command_buffer(&build_callback)?;
+        }
+        self.cb_builder = Some(Arc::new(build_callback));
+        Ok(())
+    }
+    pub fn update_command_buffer(&mut self) -> Result<()> {
+        if let Some(cb_builder) = &self.cb_builder {
+            for framebuffer in &mut self.list {
+                framebuffer.build_command_buffer(cb_builder.as_ref())?;
+            }
         }
         Ok(())
     }
@@ -75,6 +95,7 @@ pub struct Swapchain {
     pub swapchain: Arc<vk::swapchain::Swapchain>,
     pub render_pass: Arc<vk::render_pass::RenderPass>,
     pub framebuffers: Framebuffers,
+    previous_image_index: u32,
 }
 
 impl Swapchain {
@@ -104,17 +125,68 @@ impl Swapchain {
             swapchain,
             render_pass,
             framebuffers,
+            previous_image_index: 0,
         })
     }
     pub fn recreate(&mut self) -> Result<()> {
         let (swapchain, images) = self.swapchain.recreate(vk::swapchain::SwapchainCreateInfo {
                 image_extent: self.vkenv.dimension(),
-                ..self.swapchain.create_info()
+                ..self.swapchain.create_info() 
             })
             .map_err(|e| anyhow::anyhow!("failed to recreate swapchain: {}", e))?;
         self.swapchain = swapchain;
+        let cb_builder = self.framebuffers.cb_builder.clone();
         self.framebuffers = Framebuffers::new(&self.vkenv, images, &self.render_pass)?;
+        self.framebuffers.cb_builder = cb_builder;
+        self.framebuffers.update_command_buffer()?;
         Ok(())
     }
-    
+    pub fn draw(&mut self) -> Result<()> {
+        use vulkano::sync::future::GpuFuture;
+        use vulkano::sync::FlushError;
+        let recreate_swapchain = 'a: {
+            let mut recreate_swapchain = false;
+            let (image_i, suboptimal, acquire_future) =
+            match vk::swapchain::acquire_next_image(self.swapchain.clone(), None) {
+                Ok(r) => r,
+                Err(vk::swapchain::AcquireError::OutOfDate) => {
+                    break 'a true;
+                }
+                Err(e) => panic!("failed to acquire next image: {e}"),
+            };
+            if suboptimal {
+                recreate_swapchain = true;
+            }
+            let queue = self.vkenv.queues.graphics.clone();
+            let fb = &self.framebuffers.list[image_i as usize];
+            let execution = vk::sync::now(self.vkenv.device.clone())
+                .join (acquire_future)
+                .then_execute(queue.clone(), fb.command_buffer.clone().ok_or_else(|| anyhow::anyhow!("no command buffer"))?)
+                .unwrap()
+                .then_swapchain_present(
+                    queue.clone(),
+                    vk::swapchain::SwapchainPresentInfo::swapchain_image_index(self.swapchain.clone(), image_i),
+                )
+                .then_signal_fence_and_flush();
+            
+            match execution {
+                Ok(future) => {
+                    self.framebuffers.list[self.previous_image_index as usize].fence = Some(Arc::new(future.boxed()));
+                    // future.wait(None)?;  // wait for the GPU to finish
+                }
+                Err(FlushError::OutOfDate) => {
+                    recreate_swapchain = true;
+                }
+                Err(e) => {
+                    return Err(anyhow::anyhow!("failed to flush future: {e}"));
+                }
+            }
+            
+            recreate_swapchain
+        };
+        if recreate_swapchain {
+            self.recreate()?;
+        }
+        Ok(())
+    }
 }
