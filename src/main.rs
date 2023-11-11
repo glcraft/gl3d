@@ -21,7 +21,7 @@ fn main() {
             builder
                 .begin_render_pass(
                     vk::command_buffer::RenderPassBeginInfo {
-                        clear_values: vec![Some([0.1, 0.1, 0.1, 1.0].into())],
+                        clear_values: vec![Some([0.5, 0.1, 0.1, 1.0].into())],
                         ..render_begin_info
                     },
                     vk::command_buffer::SubpassContents::Inline,
