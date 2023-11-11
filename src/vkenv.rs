@@ -70,7 +70,7 @@ impl VulkanEnvironment {
     fn new_window(event_loop: &winit::event_loop::EventLoop<()>, instance: &Arc<vk::instance::Instance>) -> Result<(Arc<winit::window::Window>, Arc<vk::swapchain::Surface>)> {
         use vulkano_win::VkSurfaceBuild;
         let surface = winit::window::WindowBuilder::new()
-            .with_resizable(false)
+            .with_resizable(true)
             .build_vk_surface(event_loop, instance.clone())
             .map_err(|_| anyhow::anyhow!("failed to create window"))?;
         let window = surface
