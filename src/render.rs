@@ -4,12 +4,27 @@ use crate::vkenv::VulkanEnvironment;
 
 type Result<T> = std::result::Result<T, anyhow::Error>;
 
+struct Fence {
+    into_boxed_closure: Option<Box<dyn FnOnce() -> Box<dyn vk::sync::GpuFuture>>>,
+    wait_closure: Option<Box<dyn FnOnce() -> std::result::Result<(), vulkano::sync::FlushError>>>
+}
+impl Fence {
+    fn get_boxed(&mut self) -> Box<dyn vk::sync::GpuFuture> {
+        let opt = self.into_boxed_closure.take().map(|v| v());
+        opt.unwrap()
+    }
+    fn wait(&mut self) -> std::result::Result<(), vulkano::sync::FlushError> {
+        let opt = self.wait_closure.take().map(|v| v());
+        opt.unwrap()
+    }
+}
+
 pub struct Framebuffer {
     vkenv: Arc<VulkanEnvironment>,
     pub image: Arc<vk::image::swapchain::SwapchainImage>,
     pub framebuffer: Arc<vk::render_pass::Framebuffer>,
     pub command_buffer: Option<Arc<vk::command_buffer::PrimaryAutoCommandBuffer>>,
-    pub fence: Option<Arc<Box<dyn vk::sync::GpuFuture>>>
+    fence: Option<Fence>
 }
 
 type AutoCommandBufferBuilder = vk::command_buffer::AutoCommandBufferBuilder<vk::command_buffer::PrimaryAutoCommandBuffer<<vk::command_buffer::allocator::StandardCommandBufferAllocator as vk::command_buffer::allocator::CommandBufferAllocator>::Alloc>, vk::command_buffer::allocator::StandardCommandBufferAllocator>;
@@ -90,6 +105,17 @@ impl Framebuffers {
     }
 }
 
+impl std::ops::Index<usize> for Framebuffers {
+    type Output = Framebuffer;
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.list[index]
+    }
+}
+impl std::ops::IndexMut<usize> for Framebuffers {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.list[index]
+    }
+}
 pub struct Swapchain {
     vkenv: Arc<VulkanEnvironment>,
     pub swapchain: Arc<vk::swapchain::Swapchain>,
@@ -146,22 +172,39 @@ impl Swapchain {
         use vulkano::sync::FlushError;
         let recreate_swapchain = 'a: {
             let mut recreate_swapchain = false;
-            let (image_i, suboptimal, acquire_future) =
-            match vk::swapchain::acquire_next_image(self.swapchain.clone(), None) {
-                Ok(r) => r,
-                Err(vk::swapchain::AcquireError::OutOfDate) => {
-                    break 'a true;
+
+            let previous_future = match &mut self.framebuffers[self.previous_image_index as usize].fence {
+                // Create a `NowFuture`.
+                None => {
+                    let mut now = vk::sync::now(self.vkenv.device.clone());
+                    now.cleanup_finished();
+            
+                    now.boxed()
                 }
-                Err(e) => panic!("failed to acquire next image: {e}"),
+                // Use the existing `FenceSignalFuture`.
+                Some(fence) => fence.get_boxed(),
             };
+            
+            let (image_i, suboptimal, acquire_future) =
+                match vk::swapchain::acquire_next_image(self.swapchain.clone(), None) {
+                    Ok(r) => r,
+                    Err(vk::swapchain::AcquireError::OutOfDate) => {
+                        break 'a true;
+                    }
+                    Err(e) => panic!("failed to acquire next image: {e}"),
+                };
             if suboptimal {
                 recreate_swapchain = true;
             }
+            if let Some(fence) = &mut self.framebuffers[image_i as usize].fence {
+                fence.wait()?;
+            }
+            
             let queue = self.vkenv.queues.graphics.clone();
-            let fb = &self.framebuffers.list[image_i as usize];
-            let execution = vk::sync::now(self.vkenv.device.clone())
-                .join (acquire_future)
-                .then_execute(queue.clone(), fb.command_buffer.clone().ok_or_else(|| anyhow::anyhow!("no command buffer"))?)
+            let command_buffer = self.framebuffers[image_i as usize].command_buffer.clone().ok_or_else(|| anyhow::anyhow!("no command buffer"))?;
+            let future = previous_future
+                .join(acquire_future)
+                .then_execute(queue.clone(), command_buffer)
                 .unwrap()
                 .then_swapchain_present(
                     queue.clone(),
@@ -169,19 +212,30 @@ impl Swapchain {
                 )
                 .then_signal_fence_and_flush();
             
-            match execution {
+            match future {
                 Ok(future) => {
-                    self.framebuffers.list[self.previous_image_index as usize].fence = Some(Arc::new(future.boxed()));
-                    // future.wait(None)?;  // wait for the GPU to finish
+                    let fence1: Arc<vk::sync::future::FenceSignalFuture<_>> = Arc::new(future);
+                    let fence2: Arc<vk::sync::future::FenceSignalFuture<_>> = Arc::clone(&fence1);
+                    let new_fence = Fence {
+                        into_boxed_closure: Some(Box::new(move || {
+                            fence1.boxed()
+                        })),
+                        wait_closure: Some(Box::new(move || {
+                            fence2.wait(None)
+                        }))
+                    };
+                    
+                    self.framebuffers[image_i as usize].fence = Some(new_fence);
                 }
                 Err(FlushError::OutOfDate) => {
                     recreate_swapchain = true;
+                    self.framebuffers[image_i as usize].fence = None;
                 }
                 Err(e) => {
                     return Err(anyhow::anyhow!("failed to flush future: {e}"));
                 }
             }
-            
+            self.previous_image_index = image_i;
             recreate_swapchain
         };
         if recreate_swapchain {
