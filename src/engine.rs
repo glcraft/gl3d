@@ -8,6 +8,7 @@ pub struct Engine {
     pub physical_device: vk::PhysicalDevice,
     pub logical_device: ash::Device,
     pub queues: Queues,
+    pub window: winit::window::Window,
 }
 
 pub struct Queues {
@@ -22,7 +23,7 @@ struct QueueFamilyIndices {
 }
 
 impl Engine {
-    pub fn new() -> Result<Engine, ApplicationError> {
+    pub fn new(window: winit::window::Window) -> Result<Engine, ApplicationError> {
         unsafe {
             let entry = Entry::load_from("/opt/homebrew/lib/libvulkan.1.dylib")?;
             let app_info = vk::ApplicationInfo {
@@ -76,6 +77,7 @@ impl Engine {
                 physical_device: device,
                 logical_device,
                 queues,
+                window,
             })
         }
     }
