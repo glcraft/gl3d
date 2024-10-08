@@ -24,65 +24,88 @@ struct QueueFamilyIndices {
 
 impl Engine {
     pub fn new(window: winit::window::Window) -> Result<Engine, ApplicationError> {
-        unsafe {
-            let entry = Entry::load_from("/opt/homebrew/lib/libvulkan.1.dylib")?;
-            let app_info = vk::ApplicationInfo {
-                api_version: vk::make_api_version(0, 1, 4, 0),
-                ..Default::default()
-            };
-            let instance_extensions = Self::get_instance_extensions();
-            let create_info = vk::InstanceCreateInfo {
-                p_application_info: &app_info,
-                enabled_extension_count: instance_extensions.len() as u32,
-                pp_enabled_extension_names: instance_extensions.as_ptr(),
-                flags: vk::InstanceCreateFlags::default() | vk::InstanceCreateFlags::ENUMERATE_PORTABILITY_KHR,
-                ..Default::default()
-            };
-            let instance = entry.create_instance(&create_info, None)?;
+        let entry = Self::init_entry()?;
 
-            let features = vk::PhysicalDeviceFeatures {
-                ..Default::default()
-            };
+        let app_info = vk::ApplicationInfo {
+            api_version: vk::make_api_version(0, 1, 4, 0),
+            application_version: 1,
+            engine_version: 1,
+            p_engine_name: "Vulkan Engine".as_ptr() as *const i8,
+            p_application_name: "Vulkan App".as_ptr() as *const i8,
+            ..Default::default()
+        };
 
-            let device = instance.enumerate_physical_devices()?
-                .into_iter()
-                .find(|d| Self::check_device(&instance, d))
-                .ok_or("No suitable device found")?;
-            
-            let queue_indices = Self::get_queue_family_indices(&instance, &device)?;
-            
-            let create_device = vk::DeviceCreateInfo {
-                queue_create_info_count: 1,
-                p_queue_create_infos: &vk::DeviceQueueCreateInfo {
-                    queue_family_index: queue_indices.graphics,
-                    queue_count: 1,
-                    p_queue_priorities: &1.0,
-                    ..Default::default()
-                },
-                flags: vk::DeviceCreateFlags::empty(),
-                // pp_enabled_extension_names: Self::REQUIRED_EXTENSIONS.as_ptr(),
-                // enabled_extension_count: Self::REQUIRED_EXTENSIONS.len() as u32,
-                enabled_extension_count: 0,
-                p_enabled_features: &features,
-                ..Default::default()
-            };
-            let logical_device = instance.create_device(device, &create_device, None)?;
-            let queues = Queues {
-                graphics: logical_device.get_device_queue(queue_indices.graphics, 0),
-                // compute: unsafe { logical_device.get_device_queue(queue_indices.compute, 0) },
-            };
-            Ok(Engine {
-                entry,
-                instance,
-                physical_device: device,
-                logical_device,
-                queues,
-                window,
-            })
-        }
+        let instance = Self::init_instance(&entry, app_info)?;
+
+        let physical_device = Self::get_physical_device(&instance)?;
+        
+        let queue_indices = Self::get_queue_family_indices(&instance, &physical_device)?;
+        
+        let logical_device = Self::create_logical_device(&instance, physical_device, queue_indices.graphics)?;
+        let queues = Queues {
+            graphics: unsafe { logical_device.get_device_queue(queue_indices.graphics, 0) },
+            // compute: unsafe { logical_device.get_device_queue(queue_indices.compute, 0) },
+        };
+        Ok(Engine {
+            entry,
+            instance,
+            physical_device,
+            logical_device,
+            queues,
+            window,
+        })
     }
 
+    fn init_entry() -> Result<Entry, ApplicationError> {
+        unsafe { Ok(Entry::load_from("/opt/homebrew/lib/libvulkan.1.dylib")?) }
+    }
+    fn init_instance(entry: &Entry, app_info: vk::ApplicationInfo) -> Result<ash::Instance, ApplicationError> {
+        let instance_extensions = Self::get_instance_extensions();
 
+        let create_info = vk::InstanceCreateInfo {
+            p_application_info: &app_info,
+            enabled_extension_count: instance_extensions.len() as u32,
+            pp_enabled_extension_names: instance_extensions.as_ptr(),
+            flags: vk::InstanceCreateFlags::default() | vk::InstanceCreateFlags::ENUMERATE_PORTABILITY_KHR,
+            ..Default::default()
+        };
+        let instance = unsafe { entry.create_instance(&create_info, None)? };
+        Ok(instance)
+    }
+
+    fn get_physical_device(instance: &ash::Instance) -> Result<vk::PhysicalDevice, ApplicationError> {
+        let physical_devices = unsafe { instance.enumerate_physical_devices()? };
+        let physical_device = physical_devices
+            .into_iter()
+            .find(|d| Self::check_device(instance, d))
+            .ok_or("No suitable device found")?;
+        Ok(physical_device)
+    }
+
+    fn create_logical_device(instance: &ash::Instance, device: vk::PhysicalDevice, queue_indices: u32) -> Result<ash::Device, ApplicationError> {
+        let features = vk::PhysicalDeviceFeatures {
+            ..Default::default()
+        };
+        let extensions = &[];
+
+        let queue_create_infos = vk::DeviceQueueCreateInfo {
+            queue_family_index: queue_indices,
+            queue_count: 1,
+            p_queue_priorities: &1.0,
+            ..Default::default()
+        };
+
+        let device_create_info = vk::DeviceCreateInfo {
+            p_queue_create_infos: &queue_create_infos as *const _,
+            pp_enabled_extension_names: extensions.as_ptr(),
+            enabled_extension_count: extensions.len() as u32,
+            p_enabled_features: &features,
+            ..Default::default()
+        };
+
+        let device = unsafe { instance.create_device(device, &device_create_info, None)? };
+        Ok(device)
+    }
 
     fn get_instance_extensions() -> Vec<*const i8> {
         let mut instance_extentions = Vec::with_capacity(10);
