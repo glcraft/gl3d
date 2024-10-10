@@ -1,3 +1,4 @@
+use crate::engine;
 use winit::{
     event::WindowEvent,
     event_loop::ActiveEventLoop,
@@ -10,12 +11,15 @@ use winit::{
 
 #[derive(Default)]
 pub struct App {
-    window: Option<Window>,
+    pub window: Option<Window>,
+    pub vk_engine: Option<engine::Engine>
 }
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        self.window = Some(event_loop.create_window(Window::default_attributes()).unwrap());
+        let window = event_loop.create_window(Window::default_attributes()).unwrap();
+        self.window = Some(window);
+        self.vk_engine = Some(engine::Engine::new(unsafe { self.window.as_ref().unwrap_unchecked() }).unwrap());
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
