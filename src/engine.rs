@@ -3,7 +3,7 @@ mod instances;
 use std::collections::HashSet;
 
 use ash::{vk, Entry};
-use crate::error::ApplicationError;
+use crate::{error::ApplicationError, utils};
 
 pub struct Engine {
     pub instances: instances::Instances,
@@ -124,7 +124,7 @@ impl Engine {
         let properties = unsafe { instances.base.enumerate_device_extension_properties(*device)? };
         for extension in extensions {
             let extension_i8_slice = unsafe { std::slice::from_raw_parts(extension.as_ptr() as *const i8, extension.len()) };
-            if !properties.iter().any(|p| Self::compare_slices(&p.extension_name, extension_i8_slice)) {
+            if !properties.iter().any(|p| utils::compare_slices(&p.extension_name, extension_i8_slice)) {
                 return Ok(false);
             }
         }
@@ -158,14 +158,7 @@ impl Engine {
             ash::khr::swapchain::NAME.to_bytes(),
         ]
     }
-    fn compare_slices(v1: &[i8], v2: &[i8]) -> bool {
-        v1
-            .iter()
-            .zip(v2.iter())
-            .all(|(a, b)| {
-                *a == *b
-            })
-    }
+    
 }
 
 impl Drop for Engine {

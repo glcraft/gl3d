@@ -1,4 +1,5 @@
 mod app;
+mod utils;
 mod engine;
 mod error;
 
