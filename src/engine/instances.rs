@@ -1,3 +1,5 @@
+use std::ffi::CStr;
+
 use ash::vk;
 use crate::ApplicationError;
 
@@ -18,8 +20,8 @@ pub struct Instances {
 }
 
 impl Instances {
-    pub fn new(entry: ash::Entry, app_info: vk::ApplicationInfo) -> Result<Self, ApplicationError> {
-        let instance_extensions = Self::get_instance_extensions();
+    pub fn new(entry: ash::Entry, app_info: vk::ApplicationInfo, instance_extensions: &[&CStr]) -> Result<Self, ApplicationError> {
+        let instance_extensions = instance_extensions.iter().map(|s| s.as_ptr()).collect::<Vec<_>>();
 
         let create_info = vk::InstanceCreateInfo {
             p_application_info: &app_info,
@@ -67,24 +69,6 @@ impl Instances {
             flags |= vk::InstanceCreateFlags::ENUMERATE_PORTABILITY_KHR;
         }
         flags
-    }
-    fn get_instance_extensions() -> Vec<*const i8> {
-        let mut instance_extentions = Vec::with_capacity(10);
-        instance_extentions.push(ash::khr::surface::NAME.as_ptr());
-        #[cfg(any(target_os = "macos", target_os = "ios"))]
-        instance_extentions.push(ash::khr::portability_enumeration::NAME.as_ptr());
-        #[cfg(target_os = "macos")]
-        instance_extentions.push(ash::ext::metal_surface::NAME.as_ptr());
-        #[cfg(target_os = "ios")]
-        instance_extentions.push(ash::mvk::ios_surface::NAME.as_ptr());
-        #[cfg(target_os = "windows")]
-        instance_extentions.push(ash::khr::win32_surface::NAME.as_ptr());
-        #[cfg(all(target_os = "linux", feature = "wayland"))]
-        instance_extentions.push(ash::khr::wayland_surface::NAME.as_ptr());
-        #[cfg(all(target_os = "linux", not(feature = "wayland")))]
-        instance_extentions.push(ash::khr::xlib_surface::NAME.as_ptr());
-        
-        instance_extentions
     }
 }
 

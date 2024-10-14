@@ -1,7 +1,9 @@
 mod surface;
 mod instances;
-use std::collections::HashSet;
+pub mod builder;
 
+pub use builder::Builder as EngineBuilder;
+use std::{collections::HashSet, ffi::CStr};
 use ash::{vk, Entry};
 use crate::{error::ApplicationError, utils};
 
@@ -27,27 +29,19 @@ struct QueueFamilyIndices {
 }
 
 impl Engine {
-    pub fn new(window: &winit::window::Window) -> Result<Engine, ApplicationError> {
+    pub fn new(builder: EngineBuilder, window: &winit::window::Window) -> Result<Engine, ApplicationError> {
         let entry = Self::init_entry()?;
 
-        let app_info = vk::ApplicationInfo {
-            api_version: vk::make_api_version(0, 1, 4, 0),
-            application_version: 1,
-            engine_version: 1,
-            p_engine_name: "Vulkan Engine".as_ptr() as *const i8,
-            p_application_name: "Vulkan App".as_ptr() as *const i8,
-            ..Default::default()
-        };
+        let app_info = builder.app_info.unwrap_or_default().into();
 
-        let instances = instances::Instances::new(entry, app_info)?;
+        let instances = instances::Instances::new(entry, app_info, &builder.device_extensions)?;
 
         let surface = surface::create_surface(&instances, window)?;
 
-        let extensions = Self::get_device_extensions();
-        let physical_device = Self::get_physical_device(&instances, &extensions)?;
+        let physical_device = Self::get_physical_device(&instances, &builder.device_extensions)?;
         
         let queue_indices = Self::get_queue_family_indices(&instances, &physical_device, &surface)?;
-        let logical_device = Self::create_logical_device(&instances.base, physical_device, queue_indices, &extensions)?;
+        let logical_device = Self::create_logical_device(&instances.base, physical_device, queue_indices, &builder.device_extensions)?;
 
         let queues = Queues {
             graphics: unsafe { logical_device.get_device_queue(queue_indices.graphics, 0) },
@@ -67,7 +61,7 @@ impl Engine {
         unsafe { Ok(Entry::load_from("/opt/homebrew/lib/libvulkan.1.dylib")?) }
     }
 
-    fn get_physical_device(instances: &instances::Instances, extensions: &[&[u8]]) -> Result<vk::PhysicalDevice, ApplicationError> {
+    fn get_physical_device(instances: &instances::Instances, extensions: &[&CStr]) -> Result<vk::PhysicalDevice, ApplicationError> {
         let physical_devices = unsafe { instances.base.enumerate_physical_devices()? };
         for physical_device in physical_devices {
             if Self::check_device(instances, &physical_device, extensions)? {
@@ -77,7 +71,7 @@ impl Engine {
         Err(ApplicationError::new("No suitable device found".to_string()))
     }
 
-    fn create_logical_device(instance: &ash::Instance, device: vk::PhysicalDevice, queue_indices: QueueFamilyIndices, extensions: &[&[u8]]) -> Result<ash::Device, ApplicationError> {
+    fn create_logical_device(instance: &ash::Instance, device: vk::PhysicalDevice, queue_indices: QueueFamilyIndices, extensions: &[&CStr]) -> Result<ash::Device, ApplicationError> {
         let features = vk::PhysicalDeviceFeatures {
             ..Default::default()
         };
@@ -110,7 +104,7 @@ impl Engine {
         let device = unsafe { instance.create_device(device, &device_create_info, None)? };
         Ok(device)
     }
-    fn check_device(instances: &instances::Instances, device: &ash::vk::PhysicalDevice, extensions: &[&[u8]]) -> Result<bool, ApplicationError> {
+    fn check_device(instances: &instances::Instances, device: &ash::vk::PhysicalDevice, extensions: &[&CStr]) -> Result<bool, ApplicationError> {
         unsafe {
             let properties = instances.base.get_physical_device_properties(*device);
             let _features = instances.base.get_physical_device_features(*device);
@@ -120,10 +114,10 @@ impl Engine {
                 && (properties.device_type == vk::PhysicalDeviceType::DISCRETE_GPU || properties.device_type == vk::PhysicalDeviceType::INTEGRATED_GPU))
         }
     }
-    fn check_device_extension(instances: &instances::Instances, device: &vk::PhysicalDevice, extensions: &[&[u8]]) -> Result<bool, ApplicationError> {
+    fn check_device_extension(instances: &instances::Instances, device: &vk::PhysicalDevice, extensions: &[&CStr]) -> Result<bool, ApplicationError> {
         let properties = unsafe { instances.base.enumerate_device_extension_properties(*device)? };
         for extension in extensions {
-            let extension_i8_slice = unsafe { std::slice::from_raw_parts(extension.as_ptr() as *const i8, extension.len()) };
+            let extension_i8_slice = unsafe { std::mem::transmute::<&[u8], &[i8]>(extension.to_bytes()) };
             if !properties.iter().any(|p| utils::compare_slices(&p.extension_name, extension_i8_slice)) {
                 return Ok(false);
             }

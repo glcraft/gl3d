@@ -1,3 +1,5 @@
+use std::ffi::CStr;
+
 use crate::engine;
 use winit::{
     event::WindowEvent,
@@ -8,6 +10,7 @@ use winit::{
     },
     application::ApplicationHandler
 };
+use ash::vk;
 
 #[derive(Default)]
 pub struct App {
@@ -15,11 +18,54 @@ pub struct App {
     pub vk_engine: Option<engine::Engine>
 }
 
+impl App {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    fn instance_extensions() -> Vec<&'static CStr> {
+        let mut instance_extentions = Vec::with_capacity(10);
+        instance_extentions.push(ash::khr::surface::NAME);
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        instance_extentions.push(ash::khr::portability_enumeration::NAME);
+        #[cfg(target_os = "macos")]
+        instance_extentions.push(ash::ext::metal_surface::NAME);
+        #[cfg(target_os = "ios")]
+        instance_extentions.push(ash::mvk::ios_surface::NAME);
+        #[cfg(target_os = "windows")]
+        instance_extentions.push(ash::khr::win32_surface::NAME);
+        #[cfg(all(target_os = "linux", feature = "wayland"))]
+        instance_extentions.push(ash::khr::wayland_surface::NAME);
+        #[cfg(all(target_os = "linux", not(feature = "wayland")))]
+        instance_extentions.push(ash::khr::xlib_surface::NAME);
+        
+        instance_extentions
+    }
+    fn device_extensions() -> Vec<&'static CStr> {
+        vec![ash::khr::swapchain::NAME]
+    }
+}
+
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let window = event_loop.create_window(Window::default_attributes()).unwrap();
         self.window = Some(window);
-        self.vk_engine = Some(engine::Engine::new(unsafe { self.window.as_ref().unwrap_unchecked() }).unwrap());
+        let engine = engine::EngineBuilder::default().app_info(engine::builder::ApplicationInfo {
+                application_name: c"gly's app",
+                application_version: 1,
+                engine_name: c"gly's engine",
+                engine_version: 1,
+                api_version: (0, 1, 3, 0)
+            })
+            .instance_extensions(App::instance_extensions())
+            .device_extensions(App::device_extensions())
+            .request_graphics_queue(engine::builder::QueueFamily{
+                queue_count: 1,
+                priority: 1.0
+            })
+            .request_present_queue()
+            .build()
+            .expect("failed to create engine");
+        self.vk_engine = Some(engine);//Some(engine::Engine::new(unsafe { self.window.as_ref().unwrap_unchecked() }).unwrap());
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
