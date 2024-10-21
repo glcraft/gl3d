@@ -21,11 +21,11 @@ pub struct Queues {
     // pub compute: vk::Queue,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Default, Clone, Copy, Debug)]
 struct QueueFamilyIndices {
-    graphics: u32,
-    present: u32,
-    // compute: u32,
+    graphics: Option<u32>,
+    // present: Option<u32>,
+    compute: Option<u32>,
 }
 
 impl Engine {
@@ -124,27 +124,26 @@ impl Engine {
         }
         Ok(true)
     }
-    fn get_queue_family_indices(instances: &instances::Instances, device: &ash::vk::PhysicalDevice, surface: &ash::vk::SurfaceKHR) -> Result<QueueFamilyIndices, ApplicationError> {
+    fn get_queue_family_indices(instances: &instances::Instances, device: &vk::PhysicalDevice, fn_check_queue_support: Vec<fn(&ash::vk::PhysicalDevice, u32) -> bool>) -> Result<QueueFamilyIndices, ApplicationError> {
         let queue_family_properties = unsafe { instances.base.get_physical_device_queue_family_properties(*device) };
-        let mut graphics = None;
-        let mut present = None;
-        // let mut compute = None;
+        let mut queues = QueueFamilyIndices::default();
         for (i, queue_family) in queue_family_properties.iter().enumerate().map(|(i, p)| (i as u32, p)) {
-            if graphics.is_none() && queue_family.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
-                graphics = Some(i);
+            for fn_check_queue_support in &fn_check_queue_support {
+                if !fn_check_queue_support(device, i) {
+                    // continue;
+                }
             }
-            if present.is_none() && unsafe { instances.surface.get_physical_device_surface_support(*device, i, *surface)? } {
-                present = Some(i);
-            }
+            // if graphics.is_none() && queue_family.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
+            //     if present.is_none() && unsafe { instances.surface.get_physical_device_surface_support(*device, i, *surface)? } {
+            //         graphics = Some(i);
+            //     }
+            // }
+            
             // if queue_family.queue_flags.contains(vk::QueueFlags::COMPUTE) {
             //     compute = Some(i as u32);
             // }
         };
-        Ok(QueueFamilyIndices {
-            graphics: graphics.ok_or("No graphics queue family found")?,
-            present: present.ok_or("No present queue family found")?,
-            // compute: compute.ok_or("No compute queue family found")?,
-        })
+        Ok(queues)
     }
     #[inline]
     fn get_device_extensions() -> Vec<&'static [u8]> {
