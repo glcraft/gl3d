@@ -77,16 +77,15 @@ impl From<ApplicationInfo> for vk::ApplicationInfo<'_> {
             p_engine_name: app_info.engine_name.as_ptr(),
             engine_version: app_info.engine_version,
             api_version: vk::make_api_version(
-                0, 
-                app_info.api_version.0 as _, 
-                app_info.api_version.1 as _, 
-                app_info.api_version.2 as _
+                app_info.api_version.0 as _,
+                app_info.api_version.1 as _,
+                app_info.api_version.2 as _,
+                app_info.api_version.3 as _,
             ),
             ..Default::default()
         }
     }
 }
-
 
 #[derive(Default, Clone, Debug)]
 #[non_exhaustive]
