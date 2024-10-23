@@ -29,34 +29,44 @@ struct QueueFamilyIndices {
 }
 
 impl Engine {
-    pub fn new(
-        builder: EngineBuilder,
+    pub fn new(builder: EngineBuilder) -> Result<Engine, ApplicationError> {
+        let instances = Self::make_instances(
+            builder.app_info.clone().unwrap_or_default().into(),
+            &builder.instance_extensions,
+        )?;
+        Self::init_engine(instances, builder, None)
+    }
+    pub fn with_window(
+        mut builder: EngineBuilder,
         window: &winit::window::Window,
     ) -> Result<Engine, ApplicationError> {
-        let entry = Self::init_entry()?;
+        let instances = Self::make_instances(
+            builder.app_info.clone().unwrap_or_default().into(),
+            &builder.instance_extensions,
+        )?;
+        builder.queue_families.present = true;
+        let surface = Some(surface::create_surface(&instances, window)?);
+        Self::init_engine(instances, builder, surface)
+    }
 
-        let app_info = builder.app_info.unwrap_or_default().into();
-
-        let instances = instances::Instances::new(entry, app_info, &builder.device_extensions)?;
-
-        let surface = if builder.queue_families.present {
-            Some(surface::create_surface(&instances, window)?)
-        } else {
-            None
-        };
-
+    fn init_engine(
+        instances: instances::Instances,
+        builder: EngineBuilder,
+        surface: Option<vk::SurfaceKHR>,
+    ) -> Result<Engine, ApplicationError> {
         let physical_device = Self::get_physical_device(&instances, &builder.device_extensions)?;
 
         let queue_indices = Self::get_queue_family_indices(
             &instances,
             &physical_device,
-            builder.queue_families,
+            &builder.queue_families,
             surface.as_ref(),
         )?;
         let logical_device = Self::create_logical_device(
             &instances.base,
             physical_device,
             queue_indices,
+            &builder.queue_families,
             &builder.device_extensions,
         )?;
 
@@ -79,7 +89,14 @@ impl Engine {
     }
 
     fn init_entry() -> Result<Entry, ApplicationError> {
-        unsafe { Ok(Entry::load_from("/opt/homebrew/lib/libvulkan.1.dylib")?) }
+        unsafe { Ok(Entry::load_from("/opt/homebrew/lib/libvulkan.dylib")?) }
+    }
+    fn make_instances(
+        app_info: vk::ApplicationInfo,
+        instance_extensions: &[&CStr],
+    ) -> Result<instances::Instances, ApplicationError> {
+        let entry = Self::init_entry()?;
+        instances::Instances::new(entry, app_info, instance_extensions)
     }
 
     fn get_physical_device(
@@ -101,6 +118,7 @@ impl Engine {
         instance: &ash::Instance,
         device: vk::PhysicalDevice,
         queue_indices: QueueFamilyIndices,
+        queue_families: &builder::QueueFamilies,
         extensions: &[&CStr],
     ) -> Result<ash::Device, ApplicationError> {
         let features = vk::PhysicalDeviceFeatures {
@@ -182,7 +200,7 @@ impl Engine {
     fn get_queue_family_indices(
         instances: &instances::Instances,
         device: &vk::PhysicalDevice,
-        expected_queues: builder::QueueFamilies,
+        expected_queues: &builder::QueueFamilies,
         surface: Option<&vk::SurfaceKHR>,
     ) -> Result<QueueFamilyIndices, ApplicationError> {
         assert!(
