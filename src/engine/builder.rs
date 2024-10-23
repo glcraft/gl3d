@@ -72,7 +72,7 @@ pub struct ApplicationInfo {
     pub application_version: u32,
     pub engine_name: &'static CStr,
     pub engine_version: u32,
-    pub api_version: (u8, u8, u8, u8),
+    pub api_version: u32,
 }
 
 impl From<ApplicationInfo> for vk::ApplicationInfo<'_> {
@@ -82,12 +82,7 @@ impl From<ApplicationInfo> for vk::ApplicationInfo<'_> {
             application_version: app_info.application_version,
             p_engine_name: app_info.engine_name.as_ptr(),
             engine_version: app_info.engine_version,
-            api_version: vk::make_api_version(
-                app_info.api_version.0 as _,
-                app_info.api_version.1 as _,
-                app_info.api_version.2 as _,
-                app_info.api_version.3 as _,
-            ),
+            api_version: app_info.api_version,
             ..Default::default()
         }
     }

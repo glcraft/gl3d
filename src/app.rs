@@ -54,7 +54,7 @@ impl ApplicationHandler for App {
                 application_version: 1,
                 engine_name: c"gly's engine",
                 engine_version: 1,
-                api_version: (0, 1, 3, 0),
+                api_version: vk::API_VERSION_1_3,
             })
             .instance_extensions(App::instance_extensions())
             .device_extensions(App::device_extensions())
@@ -94,4 +94,3 @@ impl ApplicationHandler for App {
         }
     }
 }
-
