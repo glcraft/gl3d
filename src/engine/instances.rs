@@ -1,7 +1,7 @@
 use std::ffi::CStr;
 
-use ash::vk;
 use crate::ApplicationError;
+use ash::vk;
 
 pub struct Instances {
     _entry: ash::Entry,
@@ -20,8 +20,15 @@ pub struct Instances {
 }
 
 impl Instances {
-    pub fn new(entry: ash::Entry, app_info: vk::ApplicationInfo, instance_extensions: &[&CStr]) -> Result<Self, ApplicationError> {
-        let instance_extensions = instance_extensions.iter().map(|s| s.as_ptr()).collect::<Vec<_>>();
+    pub fn new(
+        entry: ash::Entry,
+        app_info: vk::ApplicationInfo,
+        instance_extensions: &[&CStr],
+    ) -> Result<Self, ApplicationError> {
+        let instance_extensions = instance_extensions
+            .iter()
+            .map(|s| s.as_ptr())
+            .collect::<Vec<_>>();
 
         let create_info = vk::InstanceCreateInfo {
             p_application_info: &app_info,
@@ -30,10 +37,7 @@ impl Instances {
             flags: Self::get_instance_flags(),
             ..Default::default()
         };
-
-        let base = unsafe {
-            entry.create_instance(&create_info, None)?
-        };
+        let base = unsafe { entry.create_instance(&create_info, None)? };
         let surface = ash::khr::surface::Instance::new(&entry, &base);
         #[cfg(target_os = "macos")]
         let macos_surface = ash::ext::metal_surface::Instance::new(&entry, &base);
@@ -79,3 +83,4 @@ impl Drop for Instances {
         }
     }
 }
+

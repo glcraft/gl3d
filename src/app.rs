@@ -1,21 +1,18 @@
 use std::ffi::CStr;
 
 use crate::engine;
+use ash::vk;
 use winit::{
+    application::ApplicationHandler,
     event::WindowEvent,
     event_loop::ActiveEventLoop,
-    window::{
-        Window,
-        WindowId
-    },
-    application::ApplicationHandler
+    window::{Window, WindowId},
 };
-use ash::vk;
 
 #[derive(Default)]
 pub struct App {
     pub window: Option<Window>,
-    pub vk_engine: Option<engine::Engine>
+    pub vk_engine: Option<engine::Engine>,
 }
 
 impl App {
@@ -37,7 +34,7 @@ impl App {
         instance_extentions.push(ash::khr::wayland_surface::NAME);
         #[cfg(all(target_os = "linux", not(feature = "wayland")))]
         instance_extentions.push(ash::khr::xlib_surface::NAME);
-        
+
         instance_extentions
     }
     fn device_extensions() -> Vec<&'static CStr> {
@@ -47,25 +44,28 @@ impl App {
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let window = event_loop.create_window(Window::default_attributes()).unwrap();
+        let window = event_loop
+            .create_window(Window::default_attributes())
+            .unwrap();
         self.window = Some(window);
-        let engine = engine::EngineBuilder::default().app_info(engine::builder::ApplicationInfo {
+        let engine = engine::EngineBuilder::default()
+            .app_info(engine::builder::ApplicationInfo {
                 application_name: c"gly's app",
                 application_version: 1,
                 engine_name: c"gly's engine",
                 engine_version: 1,
-                api_version: (0, 1, 3, 0)
+                api_version: (0, 1, 3, 0),
             })
             .instance_extensions(App::instance_extensions())
             .device_extensions(App::device_extensions())
-            .request_graphics_queue(engine::builder::QueueFamily{
+            .request_graphics_queue(engine::builder::QueueFamily {
                 queue_count: 1,
-                priority: 1.0
+                priority: 1.0,
             })
             .request_present_queue()
-            .build()
+            .build_with_window(&self.window.as_ref().unwrap())
             .expect("failed to create engine");
-        self.vk_engine = Some(engine);//Some(engine::Engine::new(unsafe { self.window.as_ref().unwrap_unchecked() }).unwrap());
+        self.vk_engine = Some(engine); //Some(engine::Engine::new(unsafe { self.window.as_ref().unwrap_unchecked() }).unwrap());
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -73,7 +73,7 @@ impl ApplicationHandler for App {
             WindowEvent::CloseRequested => {
                 println!("The close button was pressed; stopping");
                 event_loop.exit();
-            },
+            }
             WindowEvent::RedrawRequested => {
                 // Redraw the application.
                 //
@@ -94,3 +94,4 @@ impl ApplicationHandler for App {
         }
     }
 }
+
