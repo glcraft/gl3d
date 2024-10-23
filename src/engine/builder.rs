@@ -53,9 +53,15 @@ impl Builder {
         self.queue_families.present = true;
         self
     }
-    // pub fn build(self) -> Result<Engine, ApplicationError> {
-    //     EngineBuilder::new(self).build()
-    // }
+    pub fn build(self) -> Result<Engine, ApplicationError> {
+        Engine::new(self)
+    }
+    pub fn build_with_window(
+        self,
+        window: &winit::window::Window,
+    ) -> Result<Engine, ApplicationError> {
+        Engine::with_window(self, window)
+    }
 }
 fn default_device_support(_instance: &ash::Instance, _device: &ash::vk::PhysicalDevice) -> bool {
     true
