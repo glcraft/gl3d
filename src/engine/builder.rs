@@ -1,15 +1,15 @@
 use ash::vk;
 use core::ffi::CStr;
 
-type BoxedDeviceSupport = Box<dyn Fn(&ash::Instance, &ash::vk::PhysicalDevice) -> bool>;
+use crate::ApplicationError;
 
-pub struct Builder
-{
+use super::Engine;
+
+pub struct Builder {
     pub(super) instance_extensions: Vec<&'static CStr>,
     pub(super) device_extensions: Vec<&'static CStr>,
     pub(super) app_info: Option<ApplicationInfo>,
     // window: Option<&winit::window::Window>,
-    pub(super) device_support: BoxedDeviceSupport,
     pub(super) queue_families: QueueFamilies,
 }
 
@@ -20,7 +20,6 @@ impl Default for Builder {
             device_extensions: Vec::new(),
             app_info: None,
             // window: None,
-            device_support: Box::new(default_device_support),
             queue_families: Default::default(),
         }
     }
@@ -40,12 +39,6 @@ impl Builder {
     }
     pub fn app_info(mut self, app_info: ApplicationInfo) -> Self {
         self.app_info = Some(app_info);
-        self
-    }
-    pub fn device_support<DeviceSupportFn>(mut self, device_support: DeviceSupportFn) -> Self  
-        where DeviceSupportFn: Fn(&ash::Instance, &ash::vk::PhysicalDevice) -> bool + 'static
-    {
-        self.device_support = Box::new(device_support);
         self
     }
     pub fn request_graphics_queue(mut self, graphic_queue: QueueFamily) -> Self {
