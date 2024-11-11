@@ -89,7 +89,9 @@ impl Engine {
     }
 
     fn init_entry() -> Result<Entry, ApplicationError> {
-        unsafe { Ok(Entry::load_from("/opt/homebrew/lib/libvulkan.dylib")?) }
+        #[cfg(target_os = "macos")]
+        return unsafe { Ok(Entry::load_from("/opt/homebrew/lib/libvulkan.dylib")?) };
+        unsafe { Ok(Entry::load()?) }
     }
     fn make_instances(
         app_info: vk::ApplicationInfo,
