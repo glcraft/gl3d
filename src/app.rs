@@ -38,7 +38,9 @@ impl App {
         instance_extentions
     }
     fn device_extensions() -> Vec<&'static CStr> {
-        vec![ash::khr::swapchain::NAME]
+        vec![
+            ash::khr::swapchain::NAME
+        ]
     }
 }
 
