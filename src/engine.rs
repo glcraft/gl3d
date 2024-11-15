@@ -1,9 +1,10 @@
 pub mod builder;
 mod instances;
 mod surface;
+mod swapchain;
 
 use crate::{error::ApplicationError, utils};
-use ash::{vk, Entry};
+use ash::{ vk, Entry};
 pub use builder::Builder as EngineBuilder;
 use std::{collections::HashSet, ffi::CStr};
 
@@ -13,6 +14,7 @@ pub struct Engine {
     pub logical_device: ash::Device,
     pub queues: Queues,
     pub surface: Option<vk::SurfaceKHR>,
+    pub swapchain: Option<vk::SwapchainKHR>,
 }
 
 pub struct Queues {
@@ -79,12 +81,23 @@ impl Engine {
                 .compute
                 .map(|compute| unsafe { logical_device.get_device_queue(compute, 0) }),
         };
+        let swapchain = builder.extent
+            .map(|extent| swapchain::create_swapchain(
+                &instances,
+                &logical_device,
+                &physical_device,
+                surface.as_ref().unwrap(),
+                extent,
+                None,
+            ))
+            .transpose()?;
         Ok(Engine {
             instances,
             physical_device,
             logical_device,
             queues,
             surface,
+            swapchain ,
         })
     }
 
@@ -115,7 +128,14 @@ impl Engine {
             "No suitable device found".to_string(),
         ))
     }
-
+    fn query_swapchain_support(
+        instances: &instances::Instances,
+        physical_device: &vk::PhysicalDevice,
+        surface: &vk::SurfaceKHR,
+    ) -> Result<swapchain::SwapchainSupport, ApplicationError> {
+        swapchain::SwapchainSupport::new(instances, physical_device, surface)
+            .map_err(|_| ApplicationError::new("Failed to query swapchain support".to_string()))
+    }
     fn create_logical_device(
         instance: &ash::Instance,
         device: vk::PhysicalDevice,
@@ -134,9 +154,6 @@ impl Engine {
         if let Some(compute) = queue_indices.compute {
             queue_set.insert(compute);
         }
-        // queue_set.insert(queue_indices.graphics);
-        // queue_set.insert(queue_indices.present);
-        // queue_set.insert(queue_indices.compute);
         let queue_create_infos = queue_set
             .into_iter()
             .map(|i| vk::DeviceQueueCreateInfo {
@@ -262,6 +279,10 @@ impl Drop for Engine {
             self.logical_device.destroy_device(None);
             if let Some(surface) = self.surface {
                 self.instances.surface.destroy_surface(surface, None);
+            }
+            if let Some(swapchain) = self.swapchain {
+                let device = ash::khr::swapchain::Device::new(&instances.base, &device);
+                device.destroy_swapchain(swapchain, None);
             }
         }
     }

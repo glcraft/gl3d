@@ -9,6 +9,7 @@ pub struct Builder {
     pub(super) instance_extensions: Vec<&'static CStr>,
     pub(super) device_extensions: Vec<&'static CStr>,
     pub(super) app_info: Option<ApplicationInfo>,
+    pub(super) extent: Option<vk::Extent2D>,
     // window: Option<&winit::window::Window>,
     pub(super) queue_families: QueueFamilies,
 }
@@ -19,6 +20,7 @@ impl Default for Builder {
             instance_extensions: Vec::new(),
             device_extensions: Vec::new(),
             app_info: None,
+            extent: None,
             // window: None,
             queue_families: Default::default(),
         }
@@ -60,7 +62,14 @@ impl Builder {
         self,
         window: &winit::window::Window,
     ) -> Result<Engine, ApplicationError> {
-        Engine::with_window(self, window)
+        let builder = Builder {
+            extent: Some(vk::Extent2D{
+                width: window.inner_size().width as u32,
+                height: window.inner_size().height as u32
+            }),
+            ..self
+        };
+        Engine::with_window(builder, window)
     }
 }
 fn default_device_support(_instance: &ash::Instance, _device: &ash::vk::PhysicalDevice) -> bool {
