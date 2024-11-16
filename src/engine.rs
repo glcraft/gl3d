@@ -267,19 +267,21 @@ impl Engine {
     }
     #[inline]
     fn get_device_extensions() -> Vec<&'static [u8]> {
-        vec![ash::khr::swapchain::NAME.to_bytes()]
+        vec![
+            ash::khr::swapchain::NAME.to_bytes()
+        ]
     }
 }
 
 impl Drop for Engine {
     fn drop(&mut self) {
         unsafe {
+            if let Some(a) = self.swapchain.take() {
+                drop(a)
+            }
             self.logical_device.destroy_device(None);
             if let Some(surface) = self.surface {
                 self.instances.surface.destroy_surface(surface, None);
-            }
-            if let Some(swapchain) = self.swapchain {
-                drop(swapchain);
             }
             // if let Some(swapchain) = self.swapchain {
             //     let device = ash::khr::swapchain::Device::new(&instances.base, &device);

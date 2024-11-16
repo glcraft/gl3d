@@ -1,5 +1,3 @@
-use std::fmt::write;
-
 use ash::vk;
 
 pub struct SwapchainSupport {
