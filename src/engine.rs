@@ -241,20 +241,17 @@ impl Engine {
             .map(|(i, p)| (i as u32, p))
         {
             if expected_queues.graphics.is_some()
-                && graphics.is_none()
-                && queue_family.queue_flags.contains(vk::QueueFlags::GRAPHICS)
-            {
-                if expected_queues.present
-                    && unsafe {
-                        instances.surface.get_physical_device_surface_support(
-                            *device,
-                            i,
-                            *surface.unwrap(),
-                        )?
-                    }
-                {
-                    graphics = Some(i);
-                }
+                && graphics.is_none() 
+                && queue_family.queue_flags.contains(vk::QueueFlags::GRAPHICS) 
+                && expected_queues.present 
+                && unsafe {
+                    instances.surface.get_physical_device_surface_support(
+                        *device,
+                        i,
+                        *surface.unwrap(),
+                    )?
+                } {
+                graphics = Some(i);
             }
             if expected_queues.compute.is_some()
                 && compute.is_none()
