@@ -14,7 +14,7 @@ pub struct Engine {
     pub logical_device: ash::Device,
     pub queues: Queues,
     pub surface: Option<vk::SurfaceKHR>,
-    pub swapchain: Option<vk::SwapchainKHR>,
+    pub swapchain: Option<swapchain::Swapchain>,
 }
 
 pub struct Queues {
@@ -82,14 +82,15 @@ impl Engine {
                 .map(|compute| unsafe { logical_device.get_device_queue(compute, 0) }),
         };
         let swapchain = builder.extent
-            .map(|extent| swapchain::create_swapchain(
-                &instances,
-                &logical_device,
-                &physical_device,
-                surface.as_ref().unwrap(),
-                extent,
-                None,
-            ))
+            .map(|extent| {
+                let swapchain_support = swapchain::SwapchainSupport::new(&instances, &physical_device, surface.as_ref().unwrap())?;
+                swapchain::Swapchain::new(
+                    &instances,
+                    &logical_device,
+                    swapchain_support,
+                    surface.as_ref().unwrap(),
+                    extent,
+                )})
             .transpose()?;
         Ok(Engine {
             instances,
@@ -280,10 +281,10 @@ impl Drop for Engine {
             if let Some(surface) = self.surface {
                 self.instances.surface.destroy_surface(surface, None);
             }
-            if let Some(swapchain) = self.swapchain {
-                let device = ash::khr::swapchain::Device::new(&instances.base, &device);
-                device.destroy_swapchain(swapchain, None);
-            }
+            // if let Some(swapchain) = self.swapchain {
+            //     let device = ash::khr::swapchain::Device::new(&instances.base, &device);
+            //     device.destroy_swapchain(swapchain, None);
+            // }
         }
     }
 }
