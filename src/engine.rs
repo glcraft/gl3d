@@ -278,6 +278,9 @@ impl Drop for Engine {
             if let Some(surface) = self.surface {
                 self.instances.surface.destroy_surface(surface, None);
             }
+            if let Some(swapchain) = self.swapchain {
+                drop(swapchain);
+            }
             // if let Some(swapchain) = self.swapchain {
             //     let device = ash::khr::swapchain::Device::new(&instances.base, &device);
             //     device.destroy_swapchain(swapchain, None);
