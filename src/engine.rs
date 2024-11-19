@@ -166,7 +166,7 @@ impl Engine {
             .collect::<Vec<_>>();
         let extensions_ptr: Vec<*const i8> = extensions
             .iter()
-            .map(|&slice| slice.as_ptr() as *const i8)
+            .map(|&slice| slice.as_ptr())
             .collect();
         let device_create_info = vk::DeviceCreateInfo {
             queue_create_info_count: queue_create_infos.len() as u32,
