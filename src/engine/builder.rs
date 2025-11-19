@@ -1,6 +1,7 @@
 use ash::vk;
 use core::ffi::CStr;
 
+use crate::engine::swapchain::SwapchainInfo;
 use crate::ApplicationError;
 
 use super::Engine;
@@ -12,6 +13,7 @@ pub struct Builder {
     pub(super) extent: Option<vk::Extent2D>,
     // window: Option<&winit::window::Window>,
     pub(super) queue_families: QueueFamilies,
+    pub(super) swapchain_info: SwapchainInfo,
 }
 
 impl Default for Builder {
@@ -23,6 +25,7 @@ impl Default for Builder {
             extent: None,
             // window: None,
             queue_families: Default::default(),
+            swapchain_info: Default::default(),
         }
     }
 }
@@ -55,6 +58,14 @@ impl Builder {
         self.queue_families.present = true;
         self
     }
+    pub fn swapchain_format(mut self, format: vk::Format) -> Self {
+        self.swapchain_info.format = format;
+        self
+    }
+    pub fn swapchain_present_mode(mut self, present_mode: vk::PresentModeKHR) -> Self {
+        self.swapchain_info.present_mode = present_mode;
+        self
+    }
     pub fn build(self) -> Result<Engine, ApplicationError> {
         Engine::new(self)
     }
@@ -63,9 +74,9 @@ impl Builder {
         window: &winit::window::Window,
     ) -> Result<Engine, ApplicationError> {
         let builder = Builder {
-            extent: Some(vk::Extent2D{
+            extent: Some(vk::Extent2D {
                 width: window.inner_size().width as u32,
-                height: window.inner_size().height as u32
+                height: window.inner_size().height as u32,
             }),
             ..self
         };

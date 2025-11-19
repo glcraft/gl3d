@@ -4,7 +4,7 @@ mod surface;
 mod swapchain;
 
 use crate::{error::ApplicationError, utils};
-use ash::{ vk, Entry};
+use ash::{vk, Entry};
 pub use builder::Builder as EngineBuilder;
 use std::{collections::HashSet, ffi::CStr};
 
@@ -81,16 +81,23 @@ impl Engine {
                 .compute
                 .map(|compute| unsafe { logical_device.get_device_queue(compute, 0) }),
         };
-        let swapchain = builder.extent
+        let swapchain = builder
+            .extent
             .map(|extent| {
-                let swapchain_support = swapchain::SwapchainSupport::new(&instances, &physical_device, surface.as_ref().unwrap())?;
+                let swapchain_support = swapchain::SwapchainSupport::new(
+                    &instances,
+                    &physical_device,
+                    surface.as_ref().unwrap(),
+                )?;
                 swapchain::Swapchain::new(
                     &instances,
                     &logical_device,
                     swapchain_support,
                     surface.as_ref().unwrap(),
                     extent,
-                )})
+                    builder.swapchain_info,
+                )
+            })
             .transpose()?;
         Ok(Engine {
             instances,
@@ -98,7 +105,7 @@ impl Engine {
             logical_device,
             queues,
             surface,
-            swapchain ,
+            swapchain,
         })
     }
 
@@ -164,10 +171,8 @@ impl Engine {
                 ..Default::default()
             })
             .collect::<Vec<_>>();
-        let extensions_ptr: Vec<*const i8> = extensions
-            .iter()
-            .map(|&slice| slice.as_ptr())
-            .collect();
+        let extensions_ptr: Vec<*const i8> =
+            extensions.iter().map(|&slice| slice.as_ptr()).collect();
         let device_create_info = vk::DeviceCreateInfo {
             queue_create_info_count: queue_create_infos.len() as u32,
             p_queue_create_infos: queue_create_infos.as_ptr() as *const _,
@@ -241,16 +246,17 @@ impl Engine {
             .map(|(i, p)| (i as u32, p))
         {
             if expected_queues.graphics.is_some()
-                && graphics.is_none() 
-                && queue_family.queue_flags.contains(vk::QueueFlags::GRAPHICS) 
-                && expected_queues.present 
+                && graphics.is_none()
+                && queue_family.queue_flags.contains(vk::QueueFlags::GRAPHICS)
+                && expected_queues.present
                 && unsafe {
                     instances.surface.get_physical_device_surface_support(
                         *device,
                         i,
                         *surface.unwrap(),
                     )?
-                } {
+                }
+            {
                 graphics = Some(i);
             }
             if expected_queues.compute.is_some()
@@ -267,9 +273,7 @@ impl Engine {
     }
     #[inline]
     fn get_device_extensions() -> Vec<&'static [u8]> {
-        vec![
-            ash::khr::swapchain::NAME.to_bytes()
-        ]
+        vec![ash::khr::swapchain::NAME.to_bytes()]
     }
 }
 
