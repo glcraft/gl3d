@@ -9,6 +9,7 @@ use super::Engine;
 pub struct Builder {
     pub(super) instance_extensions: Vec<&'static CStr>,
     pub(super) device_extensions: Vec<&'static CStr>,
+    pub(super) layers: Vec<&'static CStr>,
     pub(super) app_info: Option<ApplicationInfo>,
     pub(super) extent: Option<vk::Extent2D>,
     // window: Option<&winit::window::Window>,
@@ -21,6 +22,7 @@ impl Default for Builder {
         Self {
             instance_extensions: Vec::new(),
             device_extensions: Vec::new(),
+            layers: Vec::new(),
             app_info: None,
             extent: None,
             // window: None,
@@ -40,6 +42,10 @@ impl Builder {
     }
     pub fn device_extensions(mut self, extensions: Vec<&'static CStr>) -> Self {
         self.device_extensions = extensions;
+        self
+    }
+    pub fn layers(mut self, layers: Vec<&'static CStr>) -> Self {
+        self.layers = layers;
         self
     }
     pub fn app_info(mut self, app_info: ApplicationInfo) -> Self {

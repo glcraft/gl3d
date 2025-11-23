@@ -131,6 +131,8 @@ impl Swapchain {
             } else {
                 u32::max_value()
             });
+        // TODO: Configurable image sharing
+        // https://vulkan-tutorial.com/Drawing_a_triangle/Presentation/Swap_chain#page_Creating-the-swap-chain
         let create_infos = vk::SwapchainCreateInfoKHR {
             surface: *surface,
             min_image_count: image_count,

@@ -15,6 +15,8 @@ pub struct App {
     pub vk_engine: Option<engine::Engine>,
 }
 
+const VALIDATION_LAYER: &core::ffi::CStr = c"VK_LAYER_KHRONOS_validation";
+
 impl App {
     pub fn new() -> Self {
         Self::default()
@@ -39,8 +41,13 @@ impl App {
     }
     fn device_extensions() -> Vec<&'static CStr> {
         vec![
-            ash::khr::swapchain::NAME
+            ash::khr::swapchain::NAME,
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
+            ash::khr::portability_subset::NAME,
         ]
+    }
+    fn layers() -> Vec<&'static CStr> {
+        vec![VALIDATION_LAYER]
     }
 }
 
@@ -60,6 +67,7 @@ impl ApplicationHandler for App {
             })
             .instance_extensions(App::instance_extensions())
             .device_extensions(App::device_extensions())
+            .layers(App::layers())
             .request_graphics_queue(engine::builder::QueueFamily {
                 queue_count: 1,
                 priority: 1.0,

@@ -3,7 +3,7 @@ mod instances;
 mod surface;
 mod swapchain;
 
-use crate::{error::ApplicationError, utils};
+use crate::{error::ApplicationError, utils::IteratorTryAny};
 use ash::{vk, Entry};
 pub use builder::Builder as EngineBuilder;
 use std::{collections::HashSet, ffi::CStr};
@@ -35,6 +35,7 @@ impl Engine {
         let instances = Self::make_instances(
             builder.app_info.clone().unwrap_or_default().into(),
             &builder.instance_extensions,
+            &builder.layers,
         )?;
         Self::init_engine(instances, builder, None)
     }
@@ -45,6 +46,7 @@ impl Engine {
         let instances = Self::make_instances(
             builder.app_info.clone().unwrap_or_default().into(),
             &builder.instance_extensions,
+            &builder.layers,
         )?;
         builder.queue_families.present = true;
         let surface = Some(surface::create_surface(&instances, window)?);
@@ -109,17 +111,14 @@ impl Engine {
         })
     }
 
-    fn init_entry() -> Result<Entry, ApplicationError> {
-        #[cfg(target_os = "macos")]
-        return unsafe { Ok(Entry::load_from("/opt/homebrew/lib/libvulkan.dylib")?) };
-        unsafe { Ok(Entry::load()?) }
-    }
     fn make_instances(
         app_info: vk::ApplicationInfo,
         instance_extensions: &[&CStr],
+        layers: &[&CStr],
     ) -> Result<instances::Instances, ApplicationError> {
-        let entry = Self::init_entry()?;
-        instances::Instances::new(entry, app_info, instance_extensions)
+        // let entry = Self::init_entry()?;
+        let entry = unsafe { Entry::load() }?;
+        instances::Instances::new(entry, app_info, instance_extensions, layers)
     }
 
     fn get_physical_device(
@@ -210,12 +209,17 @@ impl Engine {
                 .base
                 .enumerate_device_extension_properties(*device)?
         };
-        for extension in extensions {
-            let extension_i8_slice =
-                unsafe { std::mem::transmute::<&[u8], &[i8]>(extension.to_bytes()) };
+        for required_extension in extensions {
             if !properties
                 .iter()
-                .any(|p| utils::compare_slices(&p.extension_name, extension_i8_slice))
+                .map(|p| p.extension_name_as_c_str())
+                .try_any(|ext| ext == required_extension)
+                .map_err(|e| {
+                    ApplicationError::with_description(
+                        "Unable to décode device extension".to_string(),
+                        e.to_string(),
+                    )
+                })?
             {
                 return Ok(false);
             }
