@@ -1,6 +1,6 @@
-use ash::vk;
-
-use crate::engine::builder;
+use ash::khr::swapchain::Device as SwapchainDevice;
+use ash::prelude::*;
+use ash::vk::{self, SwapchainKHR};
 
 pub struct SwapchainSupport {
     pub capabilities: vk::SurfaceCapabilitiesKHR,
@@ -13,7 +13,7 @@ impl SwapchainSupport {
         instances: &super::instances::Instances,
         physical_device: &vk::PhysicalDevice,
         surface: &vk::SurfaceKHR,
-    ) -> Result<SwapchainSupport, vk::Result> {
+    ) -> VkResult<SwapchainSupport> {
         unsafe {
             let capabilities = instances
                 .surface
@@ -61,10 +61,10 @@ impl SwapchainSupport {
 }
 
 pub struct Swapchain {
-    device: ash::khr::swapchain::Device,
+    swapchain_device: SwapchainDevice,
     pub swapchain: vk::SwapchainKHR,
     pub swapchain_info: SwapchainInfo,
-    pub images: Vec<vk::Image>,
+    pub images: Vec<(vk::Image, vk::ImageView)>,
     pub extent: vk::Extent2D,
 }
 
@@ -91,8 +91,8 @@ impl Swapchain {
         surface: &vk::SurfaceKHR,
         extent: vk::Extent2D,
         swapchain_info: SwapchainInfo,
-    ) -> Result<Swapchain, vk::Result> {
-        let swapchain_device = ash::khr::swapchain::Device::new(&instances.base, &device);
+    ) -> VkResult<Swapchain> {
+        let swapchain_device = SwapchainDevice::new(&instances.base, &device);
         let (swapchain, swapchain_info, extent) = Self::create_swapchain(
             &swapchain_device,
             swapchain_support,
@@ -102,9 +102,10 @@ impl Swapchain {
             swapchain_info,
         )?;
 
-        let images = unsafe { swapchain_device.get_swapchain_images(swapchain)? };
+        let images =
+            Self::create_images(device, &swapchain_device, &swapchain, swapchain_info.format)?;
         Ok(Swapchain {
-            device: swapchain_device,
+            swapchain_device,
             swapchain,
             swapchain_info,
             images,
@@ -113,13 +114,13 @@ impl Swapchain {
     }
 
     fn create_swapchain(
-        device: &ash::khr::swapchain::Device,
+        device: &SwapchainDevice,
         swapchain_support: SwapchainSupport,
         surface: &vk::SurfaceKHR,
         extent: vk::Extent2D,
         old_swapchain: Option<vk::SwapchainKHR>,
         swapchain_info: SwapchainInfo,
-    ) -> Result<(vk::SwapchainKHR, SwapchainInfo, vk::Extent2D), vk::Result> {
+    ) -> VkResult<(vk::SwapchainKHR, SwapchainInfo, vk::Extent2D)> {
         let surface_format = swapchain_support.choose_swapchain_format(swapchain_info.format);
         let present_mode =
             swapchain_support.choose_swapchain_present_mode(swapchain_info.present_mode);
@@ -162,12 +163,56 @@ impl Swapchain {
             ))
         }
     }
+    fn create_images(
+        device: &ash::Device,
+        swapchain_device: &SwapchainDevice,
+        swapchain: &SwapchainKHR,
+        swapchain_image_format: vk::Format,
+    ) -> VkResult<Vec<(vk::Image, vk::ImageView)>> {
+        let images = unsafe { swapchain_device.get_swapchain_images(*swapchain) }?;
+        images
+            .into_iter()
+            .map(|image| {
+                let create_info = vk::ImageViewCreateInfo {
+                    image,
+                    view_type: vk::ImageViewType::TYPE_2D,
+                    format: swapchain_image_format,
+                    components: vk::ComponentMapping {
+                        r: vk::ComponentSwizzle::IDENTITY,
+                        g: vk::ComponentSwizzle::IDENTITY,
+                        b: vk::ComponentSwizzle::IDENTITY,
+                        a: vk::ComponentSwizzle::IDENTITY,
+                    },
+                    subresource_range: vk::ImageSubresourceRange {
+                        aspect_mask: vk::ImageAspectFlags::COLOR,
+                        base_mip_level: 0,
+                        level_count: 1,
+                        base_array_layer: 0,
+                        layer_count: 1,
+                    },
+                    ..Default::default()
+                };
+                Ok((image, unsafe {
+                    device.create_image_view(&create_info, None)
+                }?))
+            })
+            .collect()
+    }
+    pub fn drop_with(&mut self, device: &ash::Device) {
+        unsafe {
+            while let Some(image) = self.images.pop() {
+                device.destroy_image_view(image.1, None);
+            }
+            self.swapchain_device
+                .destroy_swapchain(self.swapchain, None);
+        }
+    }
 }
 
 impl Drop for Swapchain {
     fn drop(&mut self) {
-        unsafe {
-            self.device.destroy_swapchain(self.swapchain, None);
+        if !self.images.is_empty() {
+            panic!("Swapchain not dropped by `Swapchain::drop_with`")
         }
     }
 }

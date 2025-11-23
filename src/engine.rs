@@ -284,8 +284,8 @@ impl Engine {
 impl Drop for Engine {
     fn drop(&mut self) {
         unsafe {
-            if let Some(a) = self.swapchain.take() {
-                drop(a)
+            if let Some(mut a) = self.swapchain.take() {
+                a.drop_with(&self.logical_device);
             }
             self.logical_device.destroy_device(None);
             if let Some(surface) = self.surface {
