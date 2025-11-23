@@ -47,7 +47,10 @@ impl App {
         ]
     }
     fn layers() -> Vec<&'static CStr> {
-        vec![VALIDATION_LAYER]
+        vec![
+            #[cfg(feature = "validation_layers")]
+            VALIDATION_LAYER,
+        ]
     }
 }
 
