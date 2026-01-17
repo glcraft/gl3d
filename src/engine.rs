@@ -1,5 +1,6 @@
 pub mod builder;
 mod instances;
+mod pipeline;
 mod shader;
 mod surface;
 mod swapchain;
