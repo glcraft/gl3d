@@ -1,8 +1,10 @@
+use std::ops::Deref;
+
 use ash::vk::Result as Error;
 use ash::Device;
 
 pub struct Shader<'a> {
-    shader_module: ash::vk::ShaderModule,
+    module: ash::vk::ShaderModule,
     device: &'a Device,
 }
 
@@ -15,14 +17,22 @@ impl<'a> Shader<'a> {
             ..Default::default()
         };
         Ok(Self {
-            shader_module: unsafe { device.create_shader_module(&create_info, None)? },
+            module: unsafe { device.create_shader_module(&create_info, None)? },
             device,
         })
     }
 }
 
+impl<'a> Deref for Shader<'a> {
+    type Target = ash::vk::ShaderModule;
+
+    fn deref(&self) -> &Self::Target {
+        &self.module
+    }
+}
+
 impl<'a> Drop for Shader<'a> {
     fn drop(&mut self) {
-        unsafe { self.device.destroy_shader_module(self.shader_module, None) };
+        unsafe { self.device.destroy_shader_module(self.module, None) };
     }
 }
