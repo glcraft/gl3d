@@ -7,7 +7,7 @@ pub struct RenderPass<'a> {
     device: &'a Device,
 }
 
-impl Deref for RenderPass {
+impl<'a> Deref for RenderPass<'a> {
     type Target = vk::RenderPass;
 
     fn deref(&self) -> &Self::Target {
@@ -15,7 +15,7 @@ impl Deref for RenderPass {
     }
 }
 
-impl Drop for RenderPass {
+impl<'a> Drop for RenderPass<'a> {
     fn drop(&mut self) {
         unsafe { self.device.destroy_render_pass(self.render_pass, None) };
     }
@@ -33,9 +33,6 @@ impl<'a> RenderPassBuilder<'a> {
     pub fn new() -> Self {
         todo!()
     }
-    pub fn build(self) -> Result<vk::RenderPass> {
-        todo!()
-    }
     pub fn set_attachments(mut self, value: Vec<vk::AttachmentDescription>) -> Self {
         self.attachments = value;
         self
@@ -44,7 +41,7 @@ impl<'a> RenderPassBuilder<'a> {
         self.attachments.push(value);
         self
     }
-    pub fn set_subpasses(mut self, value: Vec<SubpassBuilder<'a>>) -> Self {
+    pub fn set_subpasses(mut self, value: Vec<SubpassBuilder>) -> Self {
         self.subpasses = value;
         self
     }
@@ -60,7 +57,7 @@ impl<'a> RenderPassBuilder<'a> {
         self.dependencies.push(value);
         self
     }
-    pub fn build(self) -> Result<RenderPass, vk::Result> {
+    pub fn build(self) -> Result<RenderPass<'a>, vk::Result> {
         let subpasses = self
             .subpasses
             .iter()
@@ -68,12 +65,12 @@ impl<'a> RenderPassBuilder<'a> {
             .collect::<Vec<_>>();
         let create_info = vk::RenderPassCreateInfo {
             flags: self.flags,
-            attachment_count: self.attachments.as_ref().len() as _,
-            p_attachments: self.attachments.as_ref().as_ptr(),
+            attachment_count: self.attachments.len() as _,
+            p_attachments: self.attachments.as_ptr(),
             subpass_count: subpasses.len() as _,
             p_subpasses: subpasses.as_ptr(),
-            dependency_count: self.dependencies.as_ref().len() as _,
-            p_dependencies: self.dependencies.as_ref().as_ptr(),
+            dependency_count: self.dependencies.len() as _,
+            p_dependencies: self.dependencies.as_ptr(),
             ..Default::default()
         };
         let render_pass = unsafe { self.device.create_render_pass(&create_info, None)? };
@@ -90,11 +87,11 @@ pub struct SubpassBuilder {
     input_attachments: Vec<vk::AttachmentReference>,
     color_attachments: Vec<vk::AttachmentReference>,
     resolve_attachments: Vec<vk::AttachmentReference>,
-    depth_stencil_attachment: Vec<vk::AttachmentReference>,
+    depth_stencil_attachment: Option<vk::AttachmentReference>,
     preserve_attachments: Vec<u32>,
 }
 
-impl<'a, I, C, R, D, P> SubpassBuilder<'a, I, C, R, D, P> {
+impl SubpassBuilder {
     pub fn set_input_attachments(mut self, value: Vec<vk::AttachmentReference>) -> Self {
         self.input_attachments = value;
         self
@@ -119,12 +116,8 @@ impl<'a, I, C, R, D, P> SubpassBuilder<'a, I, C, R, D, P> {
         self.resolve_attachments.push(resolve);
         self
     }
-    pub fn set_depth_stencil_attachments(mut self, value: Vec<vk::AttachmentReference>) -> Self {
-        self.depth_stencil_attachments = value;
-        self
-    }
-    pub fn add_depth_stencil_attachment(mut self, depth_stencil: vk::AttachmentReference) -> Self {
-        self.depth_stencil_attachments.push(depth_stencil);
+    pub fn set_depth_stencil_attachments(mut self, value: Option<vk::AttachmentReference>) -> Self {
+        self.depth_stencil_attachment = value;
         self
     }
     pub fn set_preserve_attachments(mut self, value: Vec<u32>) -> Self {
@@ -138,14 +131,18 @@ impl<'a, I, C, R, D, P> SubpassBuilder<'a, I, C, R, D, P> {
     pub fn make_description(&self) -> vk::SubpassDescription {
         vk::SubpassDescription {
             flags: self.flags,
-            input_attachment_count: self.input_attachments.as_ref().len() as _,
-            p_input_attachments: self.input_attachments.as_ref().as_ptr(),
-            color_attachment_count: self.color_attachments.as_ref().len() as _,
-            p_color_attachments: self.color_attachments.as_ref().as_ptr(),
-            p_resolve_attachments: self.resolve_attachments.as_ref().as_ptr(),
-            p_depth_stencil_attachment: self.depth_stencil_attachment.as_ref().as_ptr(),
-            preserve_attachment_count: self.preserve_attachments.as_ref().len() as _,
-            p_preserve_attachments: self.preserve_attachments.as_ref().as_ptr(),
+            input_attachment_count: self.input_attachments.len() as _,
+            p_input_attachments: self.input_attachments.as_ptr(),
+            color_attachment_count: self.color_attachments.len() as _,
+            p_color_attachments: self.color_attachments.as_ptr(),
+            p_resolve_attachments: self.resolve_attachments.as_ptr(),
+            p_depth_stencil_attachment: self
+                .depth_stencil_attachment
+                .as_ref()
+                .map(std::ptr::from_ref)
+                .unwrap_or(std::ptr::null()),
+            preserve_attachment_count: self.preserve_attachments.len() as _,
+            p_preserve_attachments: self.preserve_attachments.as_ptr(),
             ..Default::default()
         }
     }
