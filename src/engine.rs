@@ -9,7 +9,10 @@ mod swapchain;
 use crate::{error::ApplicationError, utils::IteratorTryAny};
 use ash::{vk, Entry};
 pub use builder::Builder as EngineBuilder;
-use std::{collections::HashSet, ffi::CStr};
+use std::{
+    collections::HashSet,
+    ffi::{c_void, CStr},
+};
 
 pub struct Engine {
     pub instances: instances::Instances,
@@ -153,7 +156,21 @@ impl Engine {
         queue_families: &builder::QueueFamilies,
         extensions: &[&CStr],
     ) -> Result<ash::Device, ApplicationError> {
-        let features = vk::PhysicalDeviceFeatures {
+        let vk12_features = vk::PhysicalDeviceVulkan12Features {
+            descriptor_indexing: vk::TRUE,
+            descriptor_binding_variable_descriptor_count: vk::TRUE,
+            runtime_descriptor_array: vk::TRUE,
+            buffer_device_address: vk::TRUE,
+            ..Default::default()
+        };
+        let vk13_features = vk::PhysicalDeviceVulkan13Features {
+            p_next: std::ptr::from_ref(&vk12_features) as *mut c_void,
+            synchronization2: vk::TRUE,
+            dynamic_rendering: vk::TRUE,
+            ..Default::default()
+        };
+        let vk10_features = vk::PhysicalDeviceFeatures {
+            sampler_anisotropy: vk::TRUE,
             ..Default::default()
         };
 
@@ -176,11 +193,12 @@ impl Engine {
         let extensions_ptr: Vec<*const i8> =
             extensions.iter().map(|&slice| slice.as_ptr()).collect();
         let device_create_info = vk::DeviceCreateInfo {
+            p_next: std::ptr::from_ref(&vk13_features) as *mut c_void,
             queue_create_info_count: queue_create_infos.len() as u32,
             p_queue_create_infos: queue_create_infos.as_ptr() as *const _,
             pp_enabled_extension_names: extensions_ptr.as_ptr() as *const _,
             enabled_extension_count: extensions.len() as u32,
-            p_enabled_features: &features,
+            p_enabled_features: &vk10_features,
             ..Default::default()
         };
 
