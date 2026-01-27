@@ -19,6 +19,7 @@ pub struct Engine {
     pub physical_device: vk::PhysicalDevice,
     pub logical_device: ash::Device,
     pub queues: Queues,
+    pub allocator: vk_mem::Allocator,
     pub surface: Option<vk::SurfaceKHR>,
     pub swapchain: Option<swapchain::Swapchain>,
 }
@@ -80,6 +81,8 @@ impl Engine {
             &builder.device_extensions,
         )?;
 
+        let allocator = Self::make_allocator(physical_device, &logical_device, &instances.base)?;
+
         let queues = Queues {
             graphics: queue_indices
                 .graphics
@@ -113,6 +116,7 @@ impl Engine {
             logical_device,
             queues,
             surface,
+            allocator,
             swapchain,
         })
     }
@@ -204,6 +208,16 @@ impl Engine {
 
         let device = unsafe { instance.create_device(device, &device_create_info, None)? };
         Ok(device)
+    }
+    fn make_allocator(
+        physical_device: vk::PhysicalDevice,
+        device: &ash::Device,
+        instance: &ash::Instance,
+    ) -> Result<vk_mem::Allocator, vk::Result> {
+        let mut allocator_create_info =
+            vk_mem::AllocatorCreateInfo::new(instance, device, physical_device);
+        allocator_create_info.flags = vk_mem::AllocatorCreateFlags::BUFFER_DEVICE_ADDRESS;
+        unsafe { vk_mem::Allocator::new(allocator_create_info) }
     }
     fn check_device(
         instances: &instances::Instances,
