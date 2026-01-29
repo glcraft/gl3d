@@ -2,6 +2,88 @@ use ash::khr::swapchain::Device as SwapchainDevice;
 use ash::prelude::*;
 use ash::vk::{self, SwapchainKHR};
 
+pub struct Builder<'a> {
+    // Requirted
+    device: &'a ash::Device,
+    instance: &'a ash::Instance,
+    surface_instance: &'a ash::khr::surface::Instance,
+    physical_device: vk::PhysicalDevice,
+    surface: vk::SurfaceKHR,
+    // Optional
+    image_format: Option<vk::SurfaceFormatKHR>,
+    image_color_space: Option<vk::ColorSpaceKHR>,
+    present_mode: vk::PresentModeKHR,
+    depth_stencil: Option<vk::SurfaceFormatKHR>,
+    old_swapchain: Option<vk::SwapchainKHR>,
+    // Geenrated
+    capabilities: Option<vk::SurfaceCapabilitiesKHR>,
+}
+
+impl<'a> Builder<'a> {
+    pub fn new(
+        device: &'a ash::Device,
+        instances: &'a super::instances::Instances,
+        physical_device: vk::PhysicalDevice,
+        surface: vk::SurfaceKHR,
+    ) -> Self {
+        Self {
+            device,
+            instance: &instances.base,
+            surface_instance: &instances.surface,
+            physical_device,
+            surface,
+            image_format: None,
+            image_color_space: None,
+            present_mode: vk::PresentModeKHR::FIFO,
+            depth_stencil: None,
+            old_swapchain: None,
+            capabilities: None,
+        }
+    }
+
+    pub fn build(mut self) -> VkResult<Swapchain> {
+        let swapchain_device = SwapchainDevice::new(self.instance, self.device);
+
+        let create_info = vk::SwapchainCreateInfoKHR {
+            surface: self.surface,
+            min_image_count: self.get_capabilities()?.min_image_count,
+            image_format: todo!(),
+            image_color_space: todo!(),
+            image_extent: todo!(),
+            image_array_layers: todo!(),
+            image_usage: todo!(),
+            image_sharing_mode: todo!(),
+            queue_family_index_count: todo!(),
+            p_queue_family_indices: todo!(),
+            pre_transform: todo!(),
+            composite_alpha: todo!(),
+            present_mode: self.present_mode,
+            clipped: vk::TRUE,
+            old_swapchain: self.old_swapchain.unwrap_or_else(vk::SwapchainKHR::null),
+            ..Default::default()
+        };
+
+        let swapchain = unsafe { swapchain_device.create_swapchain(&create_info, None)? };
+
+        Ok(Swapchain {
+            swapchain_device,
+            swapchain,
+            swapchain_info: todo!(),
+            images: todo!(),
+            extent: todo!(),
+        })
+    }
+    fn get_capabilities(&mut self) -> VkResult<&vk::SurfaceCapabilitiesKHR> {
+        if self.capabilities.is_none() {
+            self.capabilities = Some(unsafe {
+                self.surface_instance
+                    .get_physical_device_surface_capabilities(self.physical_device, self.surface)?
+            })
+        }
+        Ok(unsafe { self.capabilities.as_ref().unwrap_unchecked() })
+    }
+}
+
 pub struct SwapchainSupport {
     pub capabilities: vk::SurfaceCapabilitiesKHR,
     pub formats: Vec<vk::SurfaceFormatKHR>,
@@ -72,6 +154,7 @@ pub struct Swapchain {
 pub struct SwapchainInfo {
     pub format: vk::Format,
     pub present_mode: vk::PresentModeKHR,
+    pub enable_depth_stencil: bool,
 }
 
 impl Default for SwapchainInfo {
@@ -79,6 +162,7 @@ impl Default for SwapchainInfo {
         Self {
             format: vk::Format::B8G8R8A8_SRGB,
             present_mode: vk::PresentModeKHR::MAILBOX,
+            enable_depth_stencil: false,
         }
     }
 }
@@ -102,8 +186,11 @@ impl Swapchain {
             swapchain_info,
         )?;
 
-        let images =
+        let mut images =
             Self::create_images(device, &swapchain_device, &swapchain, swapchain_info.format)?;
+        if swapchain_info.enable_depth_stencil {
+            // images.push(Self::create_depth_stencil_attachment(device));
+        }
         Ok(Swapchain {
             swapchain_device,
             swapchain,
@@ -158,6 +245,7 @@ impl Swapchain {
                 SwapchainInfo {
                     format: surface_format.format,
                     present_mode,
+                    enable_depth_stencil: swapchain_info.enable_depth_stencil,
                 },
                 extent,
             ))
@@ -197,6 +285,14 @@ impl Swapchain {
                 }?))
             })
             .collect()
+    }
+    fn create_depth_stencil_attachment(
+        device: &ash::Device,
+    ) -> VkResult<(vk::Image, vk::ImageView)> {
+        // for format in [vk::Format::D32_SFLOAT_S8_UINT, vk::Format::D24_UNORM_S8_UINT] {
+        //     device.
+        // }
+        todo!()
     }
     pub fn drop_with(&mut self, device: &ash::Device) {
         unsafe {
