@@ -22,22 +22,21 @@ impl App {
         Self::default()
     }
     fn instance_extensions() -> Vec<&'static CStr> {
-        let mut instance_extentions = Vec::with_capacity(10);
-        instance_extentions.push(ash::khr::surface::NAME);
-        #[cfg(any(target_os = "macos", target_os = "ios"))]
-        instance_extentions.push(ash::khr::portability_enumeration::NAME);
-        #[cfg(target_os = "macos")]
-        instance_extentions.push(ash::ext::metal_surface::NAME);
-        #[cfg(target_os = "ios")]
-        instance_extentions.push(ash::mvk::ios_surface::NAME);
-        #[cfg(target_os = "windows")]
-        instance_extentions.push(ash::khr::win32_surface::NAME);
-        #[cfg(all(target_os = "linux", feature = "wayland"))]
-        instance_extentions.push(ash::khr::wayland_surface::NAME);
-        #[cfg(all(target_os = "linux", not(feature = "wayland")))]
-        instance_extentions.push(ash::khr::xlib_surface::NAME);
-
-        instance_extentions
+        vec![
+            ash::khr::surface::NAME,
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
+            ash::khr::portability_enumeration::NAME,
+            #[cfg(target_os = "macos")]
+            ash::ext::metal_surface::NAME,
+            #[cfg(target_os = "ios")]
+            ash::mvk::ios_surface::NAME,
+            #[cfg(target_os = "windows")]
+            ash::khr::win32_surface::NAME,
+            #[cfg(all(target_os = "linux", feature = "wayland"))]
+            ash::khr::wayland_surface::NAME,
+            #[cfg(all(target_os = "linux", not(feature = "wayland")))]
+            ash::khr::xlib_surface::NAME,
+        ]
     }
     fn device_extensions() -> Vec<&'static CStr> {
         vec![
